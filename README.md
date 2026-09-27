@@ -45,11 +45,20 @@ Set `DATA_MODE=live` in `backend/.env`, then add whichever keys you have. Each q
 | Question | Chain | What you need |
 |---|---|---|
 | Property record (beds, baths, sqft, taxes, year) | RentCast → sample | `RENTCAST_API_KEY` ([rentcast.io](https://www.rentcast.io/api)) |
-| List price, DOM, status | RESO MLS (enriches the record) | `RESO_BASE_URL`, `RESO_ACCESS_TOKEN` |
+| List price, DOM, status | RESO MLS (enriches the record) | Bright MLS: `RESO_BASE_URL`, `RESO_TOKEN_URL`, `RESO_CLIENT_ID`, `RESO_CLIENT_SECRET` (see below) |
 | Rent estimate | RentCast → sample | same RentCast key |
 | Neighborhood (tract income, rent, vacancy, owner-occupancy, poverty, commute, 5-yr growth) | Census ACS → sample | A free `CENSUS_API_KEY` ([sign up](https://api.census.gov/data/key_signup.html)); it arrives by email in minutes |
 | Comps | RESO closed sales → RentCast listings → sample | MLS feed, or RentCast |
 | Explanation / letter polish | Claude → template | `ANTHROPIC_API_KEY` |
+
+**Bright MLS setup:**
+
+1. **Apply for access.** Bright MLS provides a RESO Web API. Request data access through Bright's developer program ([brightmls.com/benefits/developers](https://www.brightmls.com/benefits/developers)); you'll need to be a Bright subscriber or work through one. During onboarding Bright issues a test **client ID and secret**, then production credentials once your use is approved.
+2. **Start on the test endpoint:** `RESO_BASE_URL=https://bright-reso.tst.brightmls.com/RESO/OData/bright`.
+3. **Set the OAuth fields.** Put the token URL from Bright's Authentication page into `RESO_TOKEN_URL`, along with `RESO_CLIENT_ID` and `RESO_CLIENT_SECRET`. If Bright specifies a scope, set `RESO_SCOPE`. If the token request returns 401, try `RESO_TOKEN_AUTH=basic`.
+4. **Switch to production** after approval: `RESO_BASE_URL=https://bright-reso.brightmls.com/RESO/OData/bright`, plus the production ID and secret.
+
+Bright follows the RESO Data Dictionary 1.7, so the fields the connector reads (`ClosePrice`, `CloseDate`, `LivingArea`, `BedroomsTotal`, ...) are standard. Check `$metadata` if a query is rejected.
 
 `GET /api/analyses/{id}/trail` shows which provider answered each question for a given analysis, and which ones failed.
 

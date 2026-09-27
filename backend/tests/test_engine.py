@@ -153,3 +153,38 @@ def test_api_token_is_enforced_when_set():
             assert client.get("/api/providers", headers={"x-api-token": "secret"}).status_code == 200
     finally:
         main.settings.api_token = None
+
+
+def test_reso_oauth_client_credentials_fetches_caches_and_refreshes_token():
+    from app.connectors.reso import ResoConnector
+    from app.models import PropertyProfile, SourceNote
+
+    calls = {"token": 0, "query": 0}
+
+    def handler(req: httpx.Request):
+        if req.url.path.endswith("/token"):
+            calls["token"] += 1
+            body = dict(x.split("=") for x in req.content.decode().split("&"))
+            assert body["grant_type"] == "client_credentials" and body["client_id"] == "cid"
+            return httpx.Response(200, json={"access_token": f"t{calls['token']}", "expires_in": 3600})
+        calls["query"] += 1
+        if calls["query"] == 2:  # simulate the token being revoked mid-session
+            return httpx.Response(401)
+        assert req.headers["Authorization"].startswith("Bearer t")
+        return httpx.Response(200, json={"value": [{
+            "UnparsedAddress": "104 Hopkins St, Woodbury, NJ 08096", "BedroomsTotal": 4, "BathroomsTotalInteger": 2,
+            "LivingArea": 1860, "YearBuilt": 1920, "ClosePrice": 292000, "CloseDate": "2026-06-20",
+            "Latitude": 39.84, "Longitude": -75.15, "NumberOfUnitsTotal": 2, "PublicRemarks": "Updated kitchen"}]})
+
+    s = Settings(reso_base_url="https://bright-reso.tst.brightmls.com/RESO/OData/bright",
+                 reso_token_url="https://auth.example.com/token", reso_client_id="cid", reso_client_secret="sec")
+    conn = ResoConnector(s, client=_client(handler))
+    assert conn.available()
+    prop = PropertyProfile(address=WOODBURY, street="218 Carpenter St", city="Woodbury", zip="08096", beds=4,
+                           baths=2, sqft=1980, year_built=1925, annual_tax=6900, annual_insurance=2400, units=2,
+                           lat=39.84, lon=-75.15, source=SourceNote(provider="test"))
+    first = conn.comps(prop)
+    assert first[0].sale_price == 292000 and first[0].condition == "Updated"
+    conn.comps(prop)            # 401 → refresh → retry
+    conn.comps(prop)            # reuses refreshed token
+    assert calls["token"] == 2

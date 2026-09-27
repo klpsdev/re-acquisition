@@ -31,9 +31,17 @@ class Settings(BaseSettings):
     # RentCast: property records, AVM value + comps, long-term rent estimate.
     rentcast_api_key: str | None = None
 
-    # RESO Web API (MLS, or Zillow Group's Bridge API). Requires an MLS / vendor
-    # data license. base_url example: https://api.bridgedataoutput.com/api/v2/OData/<dataset>
+    # RESO Web API (Bright MLS, Bridge/Zillow, other MLS vendors). Requires a data license.
+    # Bright test:  https://bright-reso.tst.brightmls.com/RESO/OData/bright
+    # Bright prod:  https://bright-reso.brightmls.com/RESO/OData/bright
     reso_base_url: str | None = None
+    # OAuth 2 client credentials (Bright MLS)
+    reso_token_url: str | None = None
+    reso_client_id: str | None = None
+    reso_client_secret: str | None = None
+    reso_scope: str | None = None
+    reso_token_auth: str = "body"          # "body" or "basic"
+    # ...or a static bearer token (Bridge and some vendors)
     reso_access_token: str | None = None
 
     # --- AI layer ----------------------------------------------------------
