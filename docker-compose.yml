@@ -1,0 +1,36 @@
+# One command to run everything locally: docker compose up --build
+# Then open http://localhost:3000  (API docs: http://localhost:8000/docs)
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sprev
+      POSTGRES_PASSWORD: sprev
+      POSTGRES_DB: sprev
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sprev"]
+      interval: 3s
+      retries: 10
+
+  api:
+    build: ./backend
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://sprev:sprev@db:5432/sprev
+      CORS_ORIGINS: http://localhost:3000
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  web:
+    build:
+      context: ./frontend
+      args: { BACKEND_URL: "http://api:8000" }
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
