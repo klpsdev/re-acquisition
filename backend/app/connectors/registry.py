@@ -50,7 +50,7 @@ class ConnectorRegistry:
     def status(self) -> list[dict]:
         rows = [
             ("sample", "Built-in sample data", True, "Always on; fallback for everything"),
-            ("census_acs", "US Census ACS 5-year (tract)", self.live, "Neighborhood stats; keyless, key optional"),
+            ("census_acs", "US Census ACS 5-year (tract)", self.live and self.census.available(), "Neighborhood stats; free key"),
             ("rentcast", "RentCast", self.live and self.rentcast.available(), "Property record, rent AVM, value comps"),
             ("reso_mls", "MLS via RESO Web API / Bridge", self.live and self.reso.available(), "Closed-sale comps, active listing"),
         ]

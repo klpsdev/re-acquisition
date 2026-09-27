@@ -24,8 +24,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
 
     # --- Connectors -------------------------------------------------------
-    # US Census (ACS 5-year). The API works without a key at low volume;
-    # a free key raises the limit: https://api.census.gov/data/key_signup.html
+    # US Census (ACS 5-year). Requires a free key: https://api.census.gov/data/key_signup.html
     census_api_key: str | None = None
     census_acs_year: int = 2023
 

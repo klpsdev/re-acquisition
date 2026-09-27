@@ -1,8 +1,9 @@
 """US Census connector: geocode the address to a tract, then pull ACS 5-year stats.
 
 This is the same public data justicemap.org visualizes (ACS income, race,
-poverty by tract), fetched directly from the source. No key is needed for
-light use; set CENSUS_API_KEY for higher limits.
+poverty by tract), fetched directly from the source. The data API requires a
+free key (CENSUS_API_KEY): https://api.census.gov/data/key_signup.html
+The geocoder itself is keyless.
 
   Geocoder: https://geocoding.geo.census.gov/geocoder/
   ACS API:  https://api.census.gov/data/<year>/acs/acs5
@@ -55,7 +56,7 @@ class CensusConnector:
         self.http = client or httpx.Client(timeout=15)
 
     def available(self) -> bool:
-        return True  # keyless access works; the key only raises rate limits
+        return bool(self.s.census_api_key)
 
     def _geocode(self, address: str) -> dict:
         r = self.http.get(GEOCODER, params={

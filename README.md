@@ -47,7 +47,7 @@ Set `DATA_MODE=live` in `backend/.env`, then add whichever keys you have. Each q
 | Property record (beds, baths, sqft, taxes, year) | RentCast → sample | `RENTCAST_API_KEY` ([rentcast.io](https://www.rentcast.io/api)) |
 | List price, DOM, status | RESO MLS (enriches the record) | `RESO_BASE_URL`, `RESO_ACCESS_TOKEN` |
 | Rent estimate | RentCast → sample | same RentCast key |
-| Neighborhood (tract income, rent, vacancy, owner-occupancy, poverty, commute, 5-yr growth) | Census ACS → sample | Nothing. It works keyless; a free `CENSUS_API_KEY` raises the limits |
+| Neighborhood (tract income, rent, vacancy, owner-occupancy, poverty, commute, 5-yr growth) | Census ACS → sample | A free `CENSUS_API_KEY` ([sign up](https://api.census.gov/data/key_signup.html)); it arrives by email in minutes |
 | Comps | RESO closed sales → RentCast listings → sample | MLS feed, or RentCast |
 | Explanation / letter polish | Claude → template | `ANTHROPIC_API_KEY` |
 
