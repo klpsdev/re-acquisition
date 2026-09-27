@@ -75,13 +75,31 @@ Set `DATA_MODE=live` in `backend/.env`, then add whichever keys you have. Each q
 
 The acceptance-likelihood curve is a placeholder heuristic. Once roughly 50 offers are logged in the `approvals` table, fit it to your actual accepted and rejected offers.
 
-## Deploying for a demo
+## Deploying for a demo (Render)
 
-**Render (simplest, one blueprint):** push this folder to a GitHub repo, then in Render choose New → Blueprint and select the repo. `render.yaml` creates the API, the web app and a Postgres database. If Render assigns different service URLs, update `CORS_ORIGINS` on the API and `BACKEND_URL` on the web service. `BACKEND_URL` is read at build time, so redeploy the web service after changing it.
+1. In [Render](https://dashboard.render.com), choose **New → Blueprint** and select this repo. `render.yaml` creates three things on free plans:
+   - `sprev-api`, the FastAPI service
+   - `sprev-web`, the Next.js app
+   - `sprev-db`, a Postgres database
+2. When Render asks for **SITE_USERNAME** and **SITE_PASSWORD**, enter the login you want your people to use. Leave RENTCAST_API_KEY and ANTHROPIC_API_KEY blank for now to stay in sample mode.
+3. Wait for both services to go live, then open the `sprev-web` URL and sign in.
+4. If Render named the API something other than `https://sprev-api.onrender.com`, open sprev-web → Environment, set **BACKEND_URL** to the API's real URL, and click **Manual Deploy**. BACKEND_URL is read at build time, so it only takes effect after a redeploy.
 
-**Vercel + Railway/Render:** deploy `frontend/` to Vercel with `BACKEND_URL` set to the API's public URL. Deploy `backend/` anywhere that runs a Dockerfile, and give it a Postgres `DATABASE_URL`.
+How access is locked down:
 
-Before sharing the link, put the app behind a login. Vercel password protection or Cloudflare Access both work, and so does basic auth at the proxy. The API has no authentication yet.
+- **The web app** asks for SITE_USERNAME / SITE_PASSWORD before showing anything (`frontend/proxy.ts`).
+- **The API** only answers requests that carry `API_TOKEN`. Render generates the token and shares it between the two services. The browser never sees it; the Next.js server attaches it when it forwards `/api/*`.
+- **The public API URL** returns 401 to anyone else. `/api/health` stays open for Render's health check.
+
+Free-plan limits:
+
+- **Cold starts:** services sleep after about 15 minutes idle, so the first load after a break takes 30–60 seconds. Open the app a minute before a demo.
+- **Database expiry:** the free Postgres database expires after 30 days. Upgrade it, or re-create it, before relying on the approval history.
+
+**Other hosts:**
+
+- **Frontend:** deploy `frontend/` to Vercel with `BACKEND_URL`, `API_TOKEN`, `SITE_USERNAME` and `SITE_PASSWORD` set.
+- **Backend:** deploy `backend/` anywhere that runs a Dockerfile, with `DATABASE_URL` and the same `API_TOKEN`.
 
 ## API
 
@@ -98,7 +116,7 @@ Before sharing the link, put the app behind a login. Vercel password protection 
 ## Next steps
 
 1. **Email delivery:** send the letter from `approve()` in `backend/app/main.py` via SMTP, SendGrid or the Gmail API, then set `sent=True`. Approval is already required first.
-2. **Auth:** add a login (for example Clerk or Auth.js on the frontend, and a shared API token on the backend) so the approvals log records real users.
+2. **Per-user login:** the site currently has one shared password. Add individual accounts (for example Clerk or Auth.js) so the approvals log records who approved each offer.
 3. **Pipeline tracking:** track statuses beyond "Approved" (Offer sent → Countered → Under contract → Passed), which also produces the training data for the acceptance model.
 4. **Rehab line items:** replace the $/sf rule with a walkthrough checklist (roof, HVAC, kitchen, baths, flooring, paint).
 5. **Strategy presets:** add buy-and-hold, BRRRR (refi at ARV) and flip, each with its own criteria and MAO rule.

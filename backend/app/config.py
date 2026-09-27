@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # postgresql+psycopg://user:pass@host:5432/sprev
     database_url: str = "sqlite:///./sprev.db"
 
+    # Shared secret between the Next.js app and this API. When set, every /api/* call
+    # except /api/health must carry it in the x-api-token header. Set the same value
+    # as API_TOKEN on the web service.
+    api_token: str | None = None
+
     # CORS origins for the Next.js app (comma separated).
     cors_origins: str = "http://localhost:3000"
 

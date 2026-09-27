@@ -8,7 +8,10 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+import hmac
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,7 +29,6 @@ settings = get_settings()
 registry = ConnectorRegistry(settings)
 
 
-
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
@@ -36,6 +38,16 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="SPREV Acquisition Engine", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
                    allow_methods=["*"], allow_headers=["*"])
+
+
+@app.middleware("http")
+async def require_api_token(request: Request, call_next):
+    """When API_TOKEN is set, only callers presenting it (the Next.js app) get answers."""
+    if settings.api_token and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        sent = request.headers.get("x-api-token", "")
+        if not hmac.compare_digest(sent, settings.api_token):
+            return JSONResponse({"detail": "Missing or invalid API token"}, status_code=401)
+    return await call_next(request)
 
 
 def _load(session: Session, analysis_id: str) -> AnalysisRow:

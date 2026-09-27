@@ -137,3 +137,19 @@ def test_api_analyze_recompute_letter_approve():
                          json={"tier": "target", "letter_text": letter["text"], "approved_by": "Lalith"}).json()
         assert ap["status"] == "approved_not_sent"
         assert client.get("/api/analyses").json()[0]["status"].startswith("Approved")
+
+
+def test_api_token_is_enforced_when_set():
+    from fastapi.testclient import TestClient
+
+    from app import main
+
+    main.settings.api_token = "secret"
+    try:
+        with TestClient(main.app) as client:
+            assert client.get("/api/health").status_code == 200
+            assert client.get("/api/providers").status_code == 401
+            assert client.get("/api/providers", headers={"x-api-token": "wrong"}).status_code == 401
+            assert client.get("/api/providers", headers={"x-api-token": "secret"}).status_code == 200
+    finally:
+        main.settings.api_token = None
