@@ -333,3 +333,75 @@ def test_send_is_blocked_while_letter_has_placeholders(monkeypatch):
                                                    "signer_phone": "856-555-0100", "signer_email": "me@gmail.com"}}).json()["text"]
         assert email_mod.placeholders(filled) == []
         assert "Dear Dana," in filled and "856-555-0100 · me@gmail.com" in filled
+
+
+# ---- Proposal to Purchase PDF ---------------------------------------------------
+
+def test_offer_pdf_contains_the_deal_values_and_no_signature():
+    import io
+
+    import pdfplumber
+
+    from app.services import offer_pdf
+    from app.services.offer_form import DEFAULT_PROFILE, balance_due
+
+    f = DEFAULT_PROFILE.model_copy(update=dict(property_address="218 Carpenter St, Woodbury, NJ 08096", price=233000,
+                                               settlement_date="Nov 11, 2026", buyer_date="09/27/2026"))
+    f.balance_due = balance_due(f)
+    assert f.balance_due == 223000
+    text = pdfplumber.open(io.BytesIO(offer_pdf.render(f))).pages[0].extract_text()
+    for s in ("218 Carpenter St, Woodbury, NJ 08096", "233,000", "10,000", "223,000", "Nov 11, 2026",
+              "SRV Realty", "PROPOSAL TO PURCHASE"):
+        assert s in text, s
+    assert "Docusign" not in text and "Lalith Phani" not in text
+    assert offer_pdf.filename(f) == "218_Carpenter_St_Offer-unsigned.pdf"
+
+
+def test_offer_form_prefill_profile_and_pdf_attached_on_send(monkeypatch):
+    from email import message_from_bytes
+
+    from fastapi.testclient import TestClient
+
+    from app import main
+    from app.services import email as email_mod
+    from app.services.email import SentMessage
+
+    sent = []
+
+    class FakeMailer:
+        provider, sender = "gmail_api", "me@gmail.com"
+
+        def send(self, msg):
+            sent.append(message_from_bytes(msg.as_bytes()))
+            return SentMessage("gmail_api", "m", "t")
+
+    monkeypatch.setattr(email_mod, "_mailer", FakeMailer())
+    with TestClient(main.app) as client:
+        a = client.post("/api/analyze", json={"address": WOODBURY}).json()
+        target = next(o for o in a["offers"] if o["tier"] == "target")
+        form = client.get(f"/api/analyses/{a['id']}/offer-form?tier=target").json()
+        assert form["price"] == target["price"] and form["property_address"].startswith("218 Carpenter St")
+        assert form["balance_due"] == target["price"] - 10000 and form["firm_name"] == "SRV Realty"
+
+        prof = client.put("/api/offer-profile", json={**form, "agent_cell": "856-555-0100"}).json()
+        assert prof["agent_cell"] == "856-555-0100"
+        assert client.get(f"/api/analyses/{a['id']}/offer-form?tier=target").json()["agent_cell"] == "856-555-0100"
+
+        pdf = client.post("/api/offer-pdf", json=form)
+        assert pdf.headers["content-type"] == "application/pdf" and pdf.content[:4] == b"%PDF"
+
+        letter = client.post(f"/api/analyses/{a['id']}/letter", json={"tier": "target", "terms": {
+            "agent_name": "Dana Reyes", "signer_name": "Lalith", "signer_phone": "856-555-0100",
+            "signer_email": "me@gmail.com"}}).json()["text"]
+        wrong = client.post(f"/api/analyses/{a['id']}/approve", json={
+            "tier": "target", "letter_text": letter, "approved_by": "Lalith", "agent_email": "agent@brokerage.com",
+            "send": True, "offer_form": {**form, "price": 1}})
+        assert wrong.status_code == 422 and "doesn't match" in wrong.json()["detail"]
+        r = client.post(f"/api/analyses/{a['id']}/approve", json={
+            "tier": "target", "letter_text": letter, "approved_by": "Lalith", "agent_email": "agent@brokerage.com",
+            "send": True, "offer_form": form}).json()
+        assert r["status"] == "sent"
+        parts = [p for p in sent[0].walk() if p.get_filename()]
+        assert parts[0].get_filename() == "218_Carpenter_St_Offer-unsigned.pdf"
+        assert parts[0].get_payload(decode=True)[:4] == b"%PDF"
+        assert client.get(f"/api/approvals/{r['approval_id']}/pdf").content[:4] == b"%PDF"

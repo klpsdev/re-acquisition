@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { usd } from "@/lib/format";
-import type { Analysis, ApprovalResult, EmailStatus, LetterTerms, Tier } from "@/lib/types";
+import type { Analysis, ApprovalResult, EmailStatus, LetterTerms, OfferForm, Tier } from "@/lib/types";
+import OfferFormFields from "./OfferForm";
 
 const DEFAULT_TERMS: LetterTerms = {
   buyer: null, agent_name: "[Listing agent name]", earnest_money_pct: 1, inspection_days: 10, close_days: 45,
@@ -30,8 +31,75 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
   const [result, setResult] = useState<ApprovalResult | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [copied, setCopied] = useState("Copy letter");
+  const [form, setForm] = useState<OfferForm | null>(null);
+  const [attachPdf, setAttachPdf] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const formFor = useRef<string>("");
   const reqId = useRef(0);
   const offer = a.offers.find((o) => o.tier === tier)!;
+
+  const calcBalance = (f: OfferForm) =>
+    f.price == null ? null : Math.round(f.price - (f.initial_deposit ?? 0) - (f.additional_deposit ?? 0) - (f.mortgage_amount ?? 0));
+
+  // Load the pre-filled Proposal to Purchase once per analysis; afterwards a tier change only updates the price.
+  useEffect(() => {
+    if (formFor.current === a.id && form) {
+      setForm((f) => (f ? { ...f, price: offer.price, balance_due: calcBalance({ ...f, price: offer.price }) } : f));
+      return;
+    }
+    formFor.current = a.id;
+    api.offerForm(a.id, tier, terms.close_days).then(setForm).catch(() => setForm(null));
+    // Pre-fill the listing agent from the listing, when the data source has it.
+    if (a.property.listing_agent_email && !agentEmail) setAgentEmail(a.property.listing_agent_email);
+    if (a.property.listing_agent_name && terms.agent_name.startsWith("["))
+      setTerms((t) => ({ ...t, agent_name: a.property.listing_agent_name! }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [a.id, offer.price]);
+
+  const setField = <K extends keyof OfferForm>(k: K, v: OfferForm[K]) =>
+    setForm((f) => {
+      if (!f) return f;
+      const next = { ...f, [k]: v };
+      next.balance_due = calcBalance(next);
+      return next;
+    });
+
+  async function previewPdf() {
+    if (!form) return;
+    const win = window.open("", "_blank");
+    setPdfBusy(true);
+    try {
+      const url = URL.createObjectURL(await api.offerPdf(form));
+      if (win) win.location.href = url; else window.location.href = url;
+    } catch (e) {
+      win?.close();
+      setStatus({ ok: false, msg: `Couldn't build the PDF: ${(e as Error).message}` });
+    } finally { setPdfBusy(false); }
+  }
+
+  async function downloadPdf() {
+    if (!form) return;
+    setPdfBusy(true);
+    try {
+      const url = URL.createObjectURL(await api.offerPdf(form));
+      const link = document.createElement("a");
+      const street = (form.property_address || "property").split(",")[0].replace(/[^A-Za-z0-9]+/g, "_");
+      link.href = url; link.download = `${street}_Offer-unsigned.pdf`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e) {
+      setStatus({ ok: false, msg: `Couldn't build the PDF: ${(e as Error).message}` });
+    } finally { setPdfBusy(false); }
+  }
+
+  async function saveDefaults() {
+    if (!form) return;
+    try { await api.saveProfile(form); setProfileMsg("Saved. New offers will start with these details."); }
+    catch (e) { setProfileMsg(`Couldn't save: ${(e as Error).message}`); }
+    setTimeout(() => setProfileMsg(null), 4000);
+  }
 
   async function generate(polish = false) {
     const id = ++reqId.current;
@@ -69,7 +137,7 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
     try {
       const r = await api.approve(a.id, {
         tier, letter_text: text, approved_by: approver.trim(), agent_email: agentEmail.trim() || undefined,
-        subject: subject.trim() || undefined, send,
+        subject: subject.trim() || undefined, send, offer_form: attachPdf ? form : null,
       });
       setResult(r);
       setStatus({ ok: r.status !== "send_failed", msg: r.message });
@@ -115,6 +183,9 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
               <input id="t-signer" type="text" value={terms.signer_name} onChange={(e) => set("signer_name", e.target.value)} /></div></div>
             <div className="field"><label htmlFor="t-phone">Your phone</label><div className="in">
               <input id="t-phone" type="text" value={terms.signer_phone} onChange={(e) => set("signer_phone", e.target.value)} /></div></div>
+            <div className="field"><label htmlFor="t-semail">Your email</label><div className="in">
+              <input id="t-semail" type="email" placeholder={email?.sender ?? "you@gmail.com"} value={terms.signer_email ?? ""}
+                onChange={(e) => set("signer_email", e.target.value || null)} /></div></div>
             <div className="field"><label htmlFor="t-emd">Earnest money (of price)</label><div className="in">
               <input id="t-emd" type="number" step={0.5} value={terms.earnest_money_pct} onChange={(e) => set("earnest_money_pct", num(e.target.value))} />
               <span className="u">%</span></div></div>
@@ -134,6 +205,37 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
           <div>
             <textarea id="letter" spellCheck aria-label="Offer letter text" value={text}
               onChange={(e) => { setText(e.target.value); setDirty(true); }} />
+
+            <div className="ptp">
+              <div className="ptp-h">
+                <label className="chk" htmlFor="attach-pdf">
+                  <input id="attach-pdf" type="checkbox" checked={attachPdf} onChange={(e) => setAttachPdf(e.target.checked)} />
+                  <b>Attach Proposal to Purchase (PDF)</b>
+                </label>
+                <div className="ptp-actions">
+                  <button className="btn" type="button" onClick={() => setFormOpen((o) => !o)} aria-expanded={formOpen} disabled={!form}>
+                    {formOpen ? "Hide form fields" : "Edit form fields"}</button>
+                  <button className="btn" type="button" onClick={previewPdf} disabled={!form || pdfBusy}>{pdfBusy ? "Building…" : "Preview PDF"}</button>
+                  <button className="btn" type="button" onClick={downloadPdf} disabled={!form || pdfBusy}>Download</button>
+                </div>
+              </div>
+              {form ? (
+                <div className="ptp-sum">
+                  {usd(form.price)} · deposit {usd(form.initial_deposit)} · balance {usd(form.balance_due)} · settle by {form.settlement_date || "—"}
+                  {" "}· {form.firm_name || "no brokerage"} · valid {form.valid_days ?? "—"} days
+                </div>
+              ) : <div className="ptp-sum">Loading the form…</div>}
+              {formOpen && form && (
+                <>
+                  <OfferFormFields form={form} set={setField} expectedBalance={calcBalance(form)} />
+                  <div className="ptp-actions" style={{ marginTop: 10 }}>
+                    <button className="btn" type="button" onClick={saveDefaults}>Save my details as defaults</button>
+                    {profileMsg && <span className="hint">{profileMsg}</span>}
+                  </div>
+                </>
+              )}
+            </div>
+
             <div className="who">
               <div className="field"><label htmlFor="agent-email">Send to (listing agent email)</label><div className="in">
                 <input id="agent-email" type="email" placeholder="agent@brokerage.com" value={agentEmail}
@@ -175,7 +277,8 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
             {confirming && (
               <div className="confirm" role="alertdialog" aria-label="Confirm sending the offer">
                 <div>Send the <b>{offer.label.toLowerCase()} offer of {usd(offer.price)}</b> for {p.street} to <b>{agentEmail.trim()}</b> from <b>{email?.sender}</b>?
-                  This emails the agent immediately and can&apos;t be unsent.</div>
+                  {attachPdf && form ? <> The unsigned <b>Proposal to Purchase PDF</b> is attached.</> : null}
+                  {" "}This emails the agent immediately and can&apos;t be unsent.</div>
                 <div className="confirm-actions">
                   <button className="btn" type="button" onClick={() => setConfirming(false)}>Cancel</button>
                   <button className="btn primary" type="button" style={{ padding: "9px 18px" }} disabled={busy}

@@ -62,6 +62,14 @@ engine = create_engine(_url, connect_args={"check_same_thread": False} if _url.s
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
+class SettingRow(Base):
+    """Small key/value store for things you set once, like your offer-form details."""
+    __tablename__ = "settings"
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 # Columns added after the first release. create_all() doesn't alter existing tables,
 # so add any that are missing. (Swap for Alembic once the schema changes more often.)
 _ADDED_COLUMNS = {

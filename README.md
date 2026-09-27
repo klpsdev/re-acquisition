@@ -111,6 +111,16 @@ When it's working, the Data sources card shows **Email sending · you@gmail.com*
 
 **Not on Render's free plan?** SMTP works too. Set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USERNAME` to your Gmail address, and `SMTP_PASSWORD` to a [Google app password](https://myaccount.google.com/apppasswords) (this needs 2-Step Verification). The Gmail API is used whenever both are configured.
 
+## Proposal to Purchase PDF
+
+Each emailed offer can carry a filled-in **NJ Proposal to Purchase (FORM#001)** as a PDF attachment, named like `218_Carpenter_St_Offer-unsigned.pdf`.
+
+- **Template:** `backend/app/templates/proposal_to_purchase_form001.pdf` is the blank form, made from your 23 W Emlen Ave offer with the DocuSign layer removed (values, checkmarks, signature and envelope ID). `backend/app/services/offer_pdf.py` writes the values onto it at the form's own coordinates, shrinks long text to fit, and draws the checkmarks as shapes.
+- **Pre-filling:** the address, price, dates and listing firm come from the analysis. Your standard details come from saved defaults: buyer entity, SRV Realty and Kumar's licensee line, title company, agent contact, usual inspections and valid days. Change them in the letter card under **Edit form fields**, then click **Save my details as defaults**.
+- **Money:** balance due = price − deposits − mortgage amount. The app recalculates it as you type, and the server rejects a PDF whose price doesn't match the approved offer or whose balance doesn't add up.
+- **Unsigned on purpose:** the buyer signature line stays blank. Sign in DocuSign once terms are agreed.
+- **Record:** each approval stores the exact form it was sent with, and `GET /api/approvals/{id}/pdf` regenerates that PDF.
+
 ## Where to change the rules
 
 | What | File |
@@ -161,6 +171,10 @@ Free-plan limits:
 | POST | `/api/analyses/{id}/approve` | Logs who approved which offer (snapshot of criteria, comps, MAO); with `send: true`, emails it to `agent_email` |
 | POST | `/api/approvals/{id}/send` | Retries sending an approved offer (never sends twice) |
 | GET | `/api/analyses/{id}/approvals` | Approval and send history for an analysis |
+| GET | `/api/analyses/{id}/offer-form?tier=` | Proposal to Purchase pre-filled for one offer tier |
+| POST | `/api/offer-pdf` | Render a filled Proposal to Purchase (PDF) |
+| GET/PUT | `/api/offer-profile` | Your saved offer-form defaults |
+| GET | `/api/approvals/{id}/pdf` | The PDF that was attached to an approved offer |
 | GET | `/api/analyses` | Recent analyses |
 | GET | `/api/analyses/{id}` / `/trail` | One analysis / its data provenance |
 | GET | `/api/providers` | Which connectors are active |

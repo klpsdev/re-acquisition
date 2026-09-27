@@ -12,7 +12,7 @@ import hmac
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,8 +21,8 @@ from .config import get_settings
 from .connectors import ConnectorRegistry
 from .db import AnalysisRow, ApprovalRow, get_session, init_db
 from .models import (Analysis, AnalysisSummary, AnalyzeRequest, ApprovalRequest, ApprovalResponse, LetterRequest,
-                     LetterResponse, RecomputeRequest)
-from .services import email, narrative
+                     LetterResponse, OfferForm, RecomputeRequest)
+from .services import email, narrative, offer_form, offer_pdf
 from .services.pipeline import analyze, bundle_from_json, bundle_to_json
 
 logging.basicConfig(level=logging.INFO)
@@ -126,6 +126,20 @@ def _default_subject(a: Analysis, price: float) -> str:
     return f"Offer: {p.street}, {p.city}, {p.state} {p.zip} (${price:,.0f})"
 
 
+def _checked_form(f: OfferForm, approved_price: float) -> dict:
+    """The PDF must say what was approved: same price, a property, a buyer, and balanced money."""
+    if not f.property_address.strip() or not f.buyer_name.strip():
+        raise HTTPException(422, "The Proposal to Purchase needs the property address and the buyer's name.")
+    if round(f.price or 0) != round(approved_price):
+        raise HTTPException(422, f"The PDF's purchase price (${(f.price or 0):,.0f}) doesn't match the approved offer "
+                                 f"(${approved_price:,.0f}). Refresh the form before approving.")
+    expected = offer_form.balance_due(f)
+    if f.balance_due is not None and expected is not None and round(f.balance_due) != expected:
+        raise HTTPException(422, f"Balance due should be ${expected:,.0f} (price minus deposits and mortgage), "
+                                 f"but the form says ${f.balance_due:,.0f}.")
+    return f.model_dump()
+
+
 def _send(session: Session, ap: ApprovalRow, a: Analysis) -> ApprovalResponse:
     """Email an approved letter. Never sends twice; records success or the reason it failed."""
     mailer = email.get_mailer(settings)
@@ -145,8 +159,12 @@ def _send(session: Session, ap: ApprovalRow, a: Analysis) -> ApprovalResponse:
         return ApprovalResponse(**base, status="approved_not_sent",
                                 message=f"Approval #{ap.id} logged but not sent: the letter still has {', '.join(left)}.")
     cc = [c.strip() for c in (settings.email_cc or "").split(",") if email.valid_email(c)]
+    attachments = []
+    if form := (ap.snapshot or {}).get("offer_form"):
+        f = OfferForm(**form)
+        attachments.append((offer_pdf.filename(f), offer_pdf.render(f), "application/pdf"))
     msg = email.build_message(mailer.sender, settings.email_sender_name, to, ap.subject or _default_subject(a, ap.price),
-                              ap.letter_text, cc)
+                              ap.letter_text, cc, attachments)
     try:
         sent = mailer.send(msg)
     except email.EmailError as e:
@@ -179,7 +197,8 @@ def approve(analysis_id: str, req: ApprovalRequest, session: Session = Depends(g
                 "constraints": [c.model_dump() for c in a.underwriting.constraints],
                 "offer": offer.model_dump(mode="json"),
                 "comps_used": [c.model_dump(mode="json") for c in a.valuation.comps if c.used],
-                "rehab": a.rehab_estimate, "rent": a.rent.model_dump(mode="json"), "trail": row.trail}
+                "rehab": a.rehab_estimate, "rent": a.rent.model_dump(mode="json"), "trail": row.trail,
+                "offer_form": _checked_form(req.offer_form, offer.price) if req.offer_form else None}
     ap = ApprovalRow(analysis_id=row.id, tier=offer.tier, price=offer.price, approved_by=req.approved_by,
                      agent_email=(req.agent_email or "").strip() or None, letter_text=req.letter_text,
                      subject=(req.subject or "").strip() or _default_subject(a, offer.price), snapshot=snapshot, sent=False)
@@ -210,3 +229,45 @@ def list_approvals(analysis_id: str, session: Session = Depends(get_session)):
              "approved_by": r.approved_by, "agent_email": r.agent_email, "subject": r.subject, "sent": r.sent,
              "sent_at": r.sent_at.isoformat(timespec="seconds") if r.sent_at else None, "sent_from": r.sent_from,
              "send_error": r.send_error} for r in rows]
+
+
+# ---- Proposal to Purchase (PDF) ------------------------------------------------
+
+@app.get("/api/offer-profile", response_model=OfferForm)
+def get_offer_profile(session: Session = Depends(get_session)):
+    """Your saved offer-form details (brokerage, agent, title company, usual terms)."""
+    return offer_form.get_profile(session)
+
+
+@app.put("/api/offer-profile", response_model=OfferForm)
+def put_offer_profile(form: OfferForm, session: Session = Depends(get_session)):
+    return offer_form.save_profile(session, form)
+
+
+@app.get("/api/analyses/{analysis_id}/offer-form", response_model=OfferForm)
+def get_offer_form(analysis_id: str, tier: str = "target", close_days: int = 45,
+                   session: Session = Depends(get_session)):
+    """The form pre-filled for one offer tier: your saved details plus this deal's address, price and dates."""
+    a = Analysis(**_load(session, analysis_id).result)
+    if tier not in {o.tier for o in a.offers}:
+        raise HTTPException(422, f"Unknown tier {tier}")
+    return offer_form.prefill(a, tier, offer_form.get_profile(session), close_days)
+
+
+@app.post("/api/offer-pdf")
+def make_offer_pdf(form: OfferForm):
+    """Render the filled Proposal to Purchase for preview or download."""
+    return Response(offer_pdf.render(form), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{offer_pdf.filename(form)}"'})
+
+
+@app.get("/api/approvals/{approval_id}/pdf")
+def approval_pdf(approval_id: int, session: Session = Depends(get_session)):
+    """The exact PDF attached to an approved offer (regenerated from its saved snapshot)."""
+    ap = session.get(ApprovalRow, approval_id)
+    form = (ap.snapshot or {}).get("offer_form") if ap else None
+    if not form:
+        raise HTTPException(404, "That approval has no Proposal to Purchase attached.")
+    f = OfferForm(**form)
+    return Response(offer_pdf.render(f), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{offer_pdf.filename(f)}"'})

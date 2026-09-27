@@ -99,6 +99,10 @@ class RentCastConnector:
             days_on_market=(listing or {}).get("daysOnMarket"),
             annual_tax=latest_tax or 0, annual_insurance=0,  # insurance filled by the pipeline's estimator
             flags=flags, lat=rec.get("latitude"), lon=rec.get("longitude"),
+            listing_agent_name=((listing or {}).get("listingAgent") or {}).get("name"),
+            listing_agent_email=((listing or {}).get("listingAgent") or {}).get("email"),
+            listing_agent_phone=((listing or {}).get("listingAgent") or {}).get("phone"),
+            listing_office=((listing or {}).get("listingOffice") or {}).get("name"),
             source=SourceNote(provider="rentcast", detail="Public record + listing.", as_of=date.today()),
         )
 

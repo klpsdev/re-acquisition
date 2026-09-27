@@ -60,7 +60,8 @@ def valid_email(addr: str | None) -> bool:
 
 
 def build_message(sender: str, sender_name: str | None, to: str, subject: str, body: str,
-                  cc: list[str] | None = None) -> EmailMessage:
+                  cc: list[str] | None = None,
+                  attachments: list[tuple[str, bytes, str]] | None = None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = formataddr((sender_name, sender)) if sender_name else sender
     msg["To"] = to
@@ -70,6 +71,9 @@ def build_message(sender: str, sender_name: str | None, to: str, subject: str, b
     msg["Subject"] = subject
     msg["Message-ID"] = make_msgid(domain=sender.split("@")[-1])
     msg.set_content(body)
+    for name, data, mime in attachments or []:
+        maintype, subtype = mime.split("/", 1)
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=name)
     return msg
 
 

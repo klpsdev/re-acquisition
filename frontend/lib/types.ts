@@ -11,6 +11,8 @@ export interface PropertyProfile {
   year_built: number; condition: Condition; utilities: string; list_price: number | null; status: string;
   days_on_market: number | null; annual_tax: number; annual_insurance: number; flags: string[];
   rehab_hint: number | null; lat: number | null; lon: number | null; source: SourceNote;
+  listing_agent_name?: string | null; listing_agent_email?: string | null; listing_agent_phone?: string | null;
+  listing_office?: string | null;
 }
 
 export interface RentEstimate { monthly: number; low: number; high: number; note: string; source: SourceNote }
@@ -76,4 +78,20 @@ export interface ProvidersResponse { data_mode: string; providers: Provider[]; a
 export interface ApprovalResult {
   approval_id: number; status: "approved_not_sent" | "sent" | "send_failed"; message: string;
   sent_from: string | null; sent_to: string | null; sent_at: string | null; message_id: string | null;
+}
+
+export type AgencyRole = "seller_agent" | "buyer_agent" | "dual_agent" | "transaction_broker";
+export interface OfferForm {
+  buyer_name: string; presenting_firm: string; property_address: string; price: number | null;
+  initial_deposit: number | null; additional_deposit: number | null; additional_deposit_date: string;
+  balance_due: number | null; mortgage_type: "fha" | "va" | "conventional" | "other" | null; mortgage_amount: number | null;
+  settlement_date: string; title_company: string; also_included: string; specifically_excluded: string;
+  possession: "settlement" | "other" | null; possession_other: string;
+  insp_wood_boring: boolean; insp_home: boolean; insp_septic: boolean; insp_other: string;
+  seller_well: boolean; seller_other: string;
+  assets: "not_contingent" | "sale_under_contract" | "sale_not_under_contract" | null; assets_property: string;
+  other_terms: string; firm_name: string; licensee: string; firm_role: AgencyRole | null; listing_firm: string;
+  listing_role: AgencyRole | null; valid_days: number | null; presenting_address: string; office_tel: string;
+  office_fax: string; agent_name: string; agent_cell: string; agent_email: string; buyer_date: string;
+  buyer_signed_2: string; buyer_date_2: string; buyer_address: string; footer_company: string;
 }

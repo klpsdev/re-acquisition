@@ -1,4 +1,4 @@
-import type { Analysis, AnalysisSummary, ApprovalResult, Criteria, LetterTerms, ProvidersResponse, Tier } from "./types";
+import type { Analysis, AnalysisSummary, ApprovalResult, Criteria, LetterTerms, OfferForm, ProvidersResponse, Tier } from "./types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -29,8 +29,17 @@ export const api = {
     call<{ tier: Tier; price: number; text: string; source: "template" | "llm" }>(`/analyses/${id}/letter`, {
       method: "POST", body: JSON.stringify({ tier, terms, polish_with_ai }),
     }),
+  offerForm: (id: string, tier: Tier, closeDays = 45) =>
+    call<OfferForm>(`/analyses/${id}/offer-form?tier=${tier}&close_days=${closeDays}`),
+  saveProfile: (form: OfferForm) => call<OfferForm>("/offer-profile", { method: "PUT", body: JSON.stringify(form) }),
+  offerPdf: async (form: OfferForm): Promise<Blob> => {
+    const res = await fetch("/api/offer-pdf", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form), cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.blob();
+  },
   approve: (id: string, body: { tier: Tier; letter_text: string; approved_by: string; agent_email?: string;
-                                 subject?: string; send: boolean }) =>
+                                 subject?: string; send: boolean; offer_form?: OfferForm | null }) =>
     call<ApprovalResult>(`/analyses/${id}/approve`, { method: "POST", body: JSON.stringify(body) }),
   resend: (approvalId: number) => call<ApprovalResult>(`/approvals/${approvalId}/send`, { method: "POST" }),
 };

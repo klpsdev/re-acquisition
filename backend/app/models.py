@@ -45,6 +45,10 @@ class PropertyProfile(BaseModel):
     annual_insurance: float
     flags: list[str] = Field(default_factory=list)
     rehab_hint: float | None = None      # a provider's or your own rehab number, if known
+    listing_agent_name: str | None = None
+    listing_agent_email: str | None = None
+    listing_agent_phone: str | None = None
+    listing_office: str | None = None
     lat: float | None = None
     lon: float | None = None
     source: SourceNote
@@ -231,6 +235,7 @@ class LetterResponse(BaseModel):
 class ApprovalRequest(BaseModel):
     tier: Literal["aggressive", "target", "competitive", "stretch"]
     letter_text: str = Field(min_length=20)
+    offer_form: "OfferForm | None" = None   # when set, the filled Proposal to Purchase PDF is attached
     approved_by: str = Field(min_length=1)
     agent_email: str | None = None
     subject: str | None = None
@@ -254,3 +259,65 @@ class AnalysisSummary(BaseModel):
     list_price: float | None
     mao: float
     status: str
+
+
+MortgageType = Literal["fha", "va", "conventional", "other"]
+AgencyRole = Literal["seller_agent", "buyer_agent", "dual_agent", "transaction_broker"]
+
+
+class OfferForm(BaseModel):
+    """Every blank on the NJ Proposal to Purchase (FORM#001). Empty fields stay blank on the PDF."""
+    buyer_name: str = ""
+    presenting_firm: str = ""
+    property_address: str = ""
+    price: float | None = None
+    initial_deposit: float | None = None
+    additional_deposit: float | None = None
+    additional_deposit_date: str = ""
+    balance_due: float | None = None
+    mortgage_type: MortgageType | None = None
+    mortgage_amount: float | None = None
+    settlement_date: str = ""
+    title_company: str = ""               # up to two lines
+    also_included: str = ""
+    specifically_excluded: str = ""
+    possession: Literal["settlement", "other"] | None = "settlement"
+    possession_other: str = ""
+    insp_wood_boring: bool = False
+    insp_home: bool = True
+    insp_septic: bool = False
+    insp_other: str = ""
+    seller_well: bool = False
+    seller_other: str = ""
+    assets: Literal["not_contingent", "sale_under_contract", "sale_not_under_contract"] | None = "not_contingent"
+    assets_property: str = ""
+    other_terms: str = ""
+    firm_name: str = ""
+    licensee: str = ""
+    firm_role: AgencyRole | None = "buyer_agent"
+    listing_firm: str = ""
+    listing_role: AgencyRole | None = "seller_agent"
+    valid_days: int | None = 15
+    presenting_address: str = ""          # up to two lines
+    office_tel: str = ""
+    office_fax: str = ""
+    agent_name: str = ""
+    agent_cell: str = ""
+    agent_email: str = ""
+    buyer_date: str = ""
+    buyer_signed_2: str = ""
+    buyer_date_2: str = ""
+    buyer_address: str = ""
+    footer_company: str = ""
+
+
+# Fields that describe you and your brokerage (saved as defaults), vs. ones that change per deal.
+OFFER_PROFILE_FIELDS = (
+    "buyer_name", "presenting_firm", "mortgage_type", "title_company", "possession", "insp_wood_boring", "insp_home",
+    "insp_septic", "insp_other", "seller_well", "seller_other", "assets", "firm_name", "licensee", "firm_role",
+    "listing_role", "valid_days", "presenting_address", "office_tel", "office_fax", "agent_name", "agent_cell",
+    "agent_email", "buyer_signed_2", "buyer_address", "footer_company", "initial_deposit",
+)
+
+
+ApprovalRequest.model_rebuild()
