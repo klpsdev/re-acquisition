@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, setWakeListener } from "@/lib/api";
 import { usdK } from "@/lib/format";
 import type { Analysis, AnalysisSummary, Criteria, ProvidersResponse, Tier } from "@/lib/types";
 import { CompsCard, NeighborhoodCard, OffersCard, SubjectCard, UnderwritingCard } from "./Cards";
@@ -33,6 +33,8 @@ export default function Dashboard() {
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
   // Set when we load a stored analysis, so restoring its criteria doesn't trigger a recompute.
   const skipRecompute = useRef(false);
+  const [waking, setWaking] = useState(false);
+  useEffect(() => { setWakeListener(setWaking); return () => setWakeListener(null); }, []);
 
   const loadRecent = useCallback(() => { api.recent().then(setRecent).catch(() => {}); }, []);
 
@@ -45,7 +47,7 @@ export default function Dashboard() {
       setRehab(""); setAnalysis(a); setTier("target"); setStep(STEPS.length);
       loadRecent();
     } catch (e) {
-      setError(`Analysis failed: ${(e as Error).message}. Is the API running at BACKEND_URL?`);
+      setError(`Analysis failed: ${(e as Error).message}. If this keeps happening, check that sprev-api is Live in Render and look at its Logs.`);
       setStep(0);
     } finally {
       clearInterval(tick); setRunning(false);
@@ -129,6 +131,7 @@ export default function Dashboard() {
           <div key={s} className={`step ${i < step ? "done" : i === step && running ? "active" : ""}`}><i /><b>{s}</b></div>
         ))}
       </div>
+      {waking && <div className="status">Waking up the server (it sleeps when idle on the free plan). This takes up to a minute…</div>}
       {error && <div className="error">{error}</div>}
 
       {analysis && (
