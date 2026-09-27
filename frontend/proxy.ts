@@ -13,6 +13,9 @@ export function proxy(req: NextRequest) {
   const user = process.env.SITE_USERNAME;
   const pass = process.env.SITE_PASSWORD;
 
+  // Public pages Google's consent screen links to.
+  if (req.nextUrl.pathname === "/privacy") return NextResponse.next();
+
   if (user && pass) {
     const header = req.headers.get("authorization") ?? "";
     const [scheme, encoded] = header.split(" ");
