@@ -170,6 +170,11 @@ def get_mailer(s: Settings) -> Mailer | None:
     return _mailer
 
 
+GMAIL_VARS = ("gmail_client_id", "gmail_client_secret", "gmail_refresh_token", "gmail_sender")
+
+
 def status(s: Settings) -> dict:
     m = get_mailer(s)
-    return {"configured": m is not None, "provider": m.provider if m else None, "sender": m.sender if m else None}
+    missing = [] if m else [v.upper() for v in GMAIL_VARS if not getattr(s, v)]
+    return {"configured": m is not None, "provider": m.provider if m else None,
+            "sender": m.sender if m else None, "missing": missing}

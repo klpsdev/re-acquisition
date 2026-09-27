@@ -150,7 +150,8 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
             )}
             <div className="sendfrom">
               {canEmail ? <>Sends from <b>{email?.sender}</b> via Gmail. A copy stays in your Sent folder and replies come to your inbox.</>
-                : <>Email isn&apos;t set up on the server yet, so approvals are logged but not sent. See &quot;Sending offers from Gmail&quot; in the README.</>}
+                : <>Email isn&apos;t set up on the server, so approvals are logged but not sent.
+                  {email?.missing?.length ? <> Missing on sprev-api: <b>{email.missing.join(", ")}</b>.</> : null}</>}
             </div>
             <div className="actions">
               <label className="approve" htmlFor="approveBox">
@@ -186,6 +187,9 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
               <div className={status.ok ? "status" : "error"}>
                 {result?.status === "sent" && <b>Sent. </b>}{status.msg}
                 {result?.status === "send_failed" && <> <button className="btn" type="button" style={{ marginLeft: 8 }} disabled={busy} onClick={retry}>Retry send</button></>}
+                {result?.status === "approved_not_sent" && canEmail && !!result.sent_to && (
+                  <> <button className="btn" type="button" style={{ marginLeft: 8 }} disabled={busy} onClick={retry}>Send this approval now</button></>
+                )}
               </div>
             )}
           </div>

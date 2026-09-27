@@ -71,7 +71,7 @@ export interface LetterTerms {
 }
 
 export interface Provider { id: string; name: string; active: boolean; provides: string }
-export interface EmailStatus { configured: boolean; provider: string | null; sender: string | null }
+export interface EmailStatus { configured: boolean; provider: string | null; sender: string | null; missing?: string[] }
 export interface ProvidersResponse { data_mode: string; providers: Provider[]; ai_explanations: boolean; email?: EmailStatus }
 export interface ApprovalResult {
   approval_id: number; status: "approved_not_sent" | "sent" | "send_failed"; message: string;

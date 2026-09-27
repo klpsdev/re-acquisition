@@ -60,7 +60,9 @@ def _load(session: Session, analysis_id: str) -> AnalysisRow:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "data_mode": settings.data_mode, "ai": bool(settings.anthropic_api_key)}
+    e = email.status(settings)  # names of missing settings only, never values
+    return {"ok": True, "data_mode": settings.data_mode, "ai": bool(settings.anthropic_api_key),
+            "email": {"configured": e["configured"], "missing": e["missing"]}}
 
 
 @app.get("/api/providers")
