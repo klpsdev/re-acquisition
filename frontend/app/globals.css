@@ -256,3 +256,7 @@ textarea#letter:focus{outline:0;border-color:var(--accent)}
 .ofs .field input[type=text]{font-family:var(--sans)}
 .hint{font-size:11.5px;color:var(--faint)}
 @media (max-width:560px){.ofgrid{grid-template-columns:1fr}}
+.field.override .in{border-color:var(--accent);background:var(--panel)}
+.field.override input{font-weight:600}
+.field.override .clear{border:0;background:transparent;color:var(--muted);font-size:16px;cursor:pointer;padding:0 2px}
+.field.override .hint{margin-top:4px;line-height:1.4}

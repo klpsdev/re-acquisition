@@ -405,3 +405,58 @@ def test_offer_form_prefill_profile_and_pdf_attached_on_send(monkeypatch):
         assert parts[0].get_filename() == "218_Carpenter_St_Offer-unsigned.pdf"
         assert parts[0].get_payload(decode=True)[:4] == b"%PDF"
         assert client.get(f"/api/approvals/{r['approval_id']}/pdf").content[:4] == b"%PDF"
+
+
+def test_price_override_flows_to_letter_pdf_and_approval(monkeypatch):
+    from email import message_from_bytes
+
+    import pdfplumber
+    import io
+    from fastapi.testclient import TestClient
+
+    from app import main
+    from app.services import email as email_mod
+    from app.services.email import SentMessage
+
+    sent = []
+
+    class FakeMailer:
+        provider, sender = "gmail_api", "me@gmail.com"
+
+        def send(self, msg):
+            sent.append(message_from_bytes(msg.as_bytes()))
+            return SentMessage("gmail_api", "m", "t")
+
+    monkeypatch.setattr(email_mod, "_mailer", FakeMailer())
+    with TestClient(main.app) as client:
+        a = client.post("/api/analyze", json={"address": WOODBURY}).json()
+        mao = a["underwriting"]["mao"]
+        above = client.get(f"/api/analyses/{a['id']}/at-price?price=275000&tier=target").json()
+        assert above["custom"] and above["price"] == 275000 and not above["meets_criteria"]
+        assert client.get(f"/api/analyses/{a['id']}/at-price?price=0").status_code == 422
+
+        terms = {"agent_name": "Dana Reyes", "signer_name": "Lalith", "signer_phone": "856-555-0100",
+                 "signer_email": "me@gmail.com"}
+        letter = client.post(f"/api/analyses/{a['id']}/letter",
+                             json={"tier": "target", "terms": terms, "price_override": 275000}).json()
+        assert letter["price"] == 275000 and "$275,000" in letter["text"]
+
+        form = client.get(f"/api/analyses/{a['id']}/offer-form?tier=target&price=275000").json()
+        assert form["price"] == 275000 and form["balance_due"] == 265000
+
+        # Mismatched PDF price is still refused, against the override price
+        bad = client.post(f"/api/analyses/{a['id']}/approve", json={
+            "tier": "target", "letter_text": letter["text"], "approved_by": "Lalith", "agent_email": "a@b.com",
+            "send": True, "price_override": 275000, "offer_form": {**form, "price": mao}})
+        assert bad.status_code == 422
+
+        r = client.post(f"/api/analyses/{a['id']}/approve", json={
+            "tier": "target", "letter_text": letter["text"], "approved_by": "Lalith", "agent_email": "a@b.com",
+            "send": True, "price_override": 275000, "offer_form": form}).json()
+        assert r["status"] == "sent" and "$275,000" in r["message"]
+        assert sent[0]["Subject"].endswith("($275,000)")
+        pdf = next(p for p in sent[0].walk() if p.get_filename()).get_payload(decode=True)
+        assert "275,000" in pdfplumber.open(io.BytesIO(pdf)).pages[0].extract_text()
+        hist = client.get(f"/api/analyses/{a['id']}/approvals").json()
+        assert hist[0]["price"] == 275000
+        assert client.get("/api/analyses").json()[0]["status"] == "Offer sent (Custom)"

@@ -33,22 +33,38 @@ def build_offers(prop: PropertyProfile, rent: RentEstimate, val: Valuation, uw: 
             price = mao
         if tier == "stretch" and prop.list_price:
             price = min(price, round(prop.list_price / 1000) * 1000)
-        e = economics(prop, rent.monthly, price, uw.rehab, val.arv, c)
-        lo = economics(prop, rent.low, price, uw.rehab, val.arv, c)
-        meets = (e.coc >= c.target_coc / 100 - 1e-9 and e.dscr >= c.min_dscr - 1e-9
-                 and price + uw.rehab <= val.arv * c.max_all_in_pct_arv / 100 + 1)
-        ret_conf = val.confidence - max(0.0, (price / mao if mao else 2) - 0.92) * 140
-        if lo.coc < c.target_coc / 100:
-            ret_conf -= 6
-        out.append(Offer(
-            tier=tier, label=label, price=price,
-            pct_of_list=price / prop.list_price if prop.list_price else None,
-            pct_of_value=price / val.as_is_value if val.as_is_value else 0,
-            meets_criteria=meets, economics=e, coc_at_low_rent=lo.coc,
-            return_confidence=int(clamp(round(ret_conf), 15, 97)),
-            acceptance_likelihood=acceptance_likelihood(price, prop.list_price, prop.days_on_market),
-        ))
+        out.append(evaluate_offer(prop, rent, val, uw, tier, label, price))
     return out
+
+
+def evaluate_offer(prop: PropertyProfile, rent: RentEstimate, val: Valuation, uw: Underwriting,
+                   tier: str, label: str, price: float, custom: bool = False) -> Offer:
+    """Returns, criteria check, confidence and acceptance odds for one price."""
+    c, mao = uw.criteria, uw.mao
+    e = economics(prop, rent.monthly, price, uw.rehab, val.arv, c)
+    lo = economics(prop, rent.low, price, uw.rehab, val.arv, c)
+    meets = (e.coc >= c.target_coc / 100 - 1e-9 and e.dscr >= c.min_dscr - 1e-9
+             and price + uw.rehab <= val.arv * c.max_all_in_pct_arv / 100 + 1)
+    ret_conf = val.confidence - max(0.0, (price / mao if mao else 2) - 0.92) * 140
+    if lo.coc < c.target_coc / 100:
+        ret_conf -= 6
+    return Offer(
+        tier=tier, label=label, price=price, custom=custom,
+        pct_of_list=price / prop.list_price if prop.list_price else None,
+        pct_of_value=price / val.as_is_value if val.as_is_value else 0,
+        meets_criteria=meets, economics=e, coc_at_low_rent=lo.coc,
+        return_confidence=int(clamp(round(ret_conf), 15, 97)),
+        acceptance_likelihood=acceptance_likelihood(price, prop.list_price, prop.days_on_market),
+    )
+
+
+def offer_for(a, tier: str, price_override: float | None = None) -> Offer:
+    """The offer to send: the tier as analyzed, or the same tier at your own price."""
+    base = next(o for o in a.offers if o.tier == tier)
+    if price_override is None or round(price_override) == round(base.price):
+        return base
+    return evaluate_offer(a.property, a.rent, a.valuation, a.underwriting, tier, "Custom",
+                          float(round(price_override)), custom=True)
 
 
 def demand_score(nb: Neighborhood) -> int:

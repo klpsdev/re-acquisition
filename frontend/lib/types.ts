@@ -54,7 +54,7 @@ export interface Underwriting { criteria: Criteria; rehab: number; constraints: 
 export interface Offer {
   tier: Tier; label: string; price: number; pct_of_list: number | null; pct_of_value: number;
   meets_criteria: boolean; economics: Economics; coc_at_low_rent: number; return_confidence: number;
-  acceptance_likelihood: number | null;
+  acceptance_likelihood: number | null; custom?: boolean;
 }
 
 export interface Risk { severity: "high" | "medium" | "low"; text: string }

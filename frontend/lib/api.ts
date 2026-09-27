@@ -1,4 +1,4 @@
-import type { Analysis, AnalysisSummary, ApprovalResult, Criteria, LetterTerms, OfferForm, ProvidersResponse, Tier } from "./types";
+import type { Analysis, AnalysisSummary, ApprovalResult, Criteria, LetterTerms, Offer, OfferForm, ProvidersResponse, Tier } from "./types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -25,10 +25,12 @@ export const api = {
     call<Analysis>("/analyze", { method: "POST", body: JSON.stringify({ address, criteria }) }),
   recompute: (id: string, criteria: Criteria, rehab_override?: number | null) =>
     call<Analysis>(`/analyses/${id}/recompute`, { method: "POST", body: JSON.stringify({ criteria, rehab_override }) }),
-  letter: (id: string, tier: Tier, terms: LetterTerms, polish_with_ai = false) =>
+  letter: (id: string, tier: Tier, terms: LetterTerms, polish_with_ai = false, price_override: number | null = null) =>
     call<{ tier: Tier; price: number; text: string; source: "template" | "llm" }>(`/analyses/${id}/letter`, {
-      method: "POST", body: JSON.stringify({ tier, terms, polish_with_ai }),
+      method: "POST", body: JSON.stringify({ tier, terms, polish_with_ai, price_override }),
     }),
+  atPrice: (id: string, tier: Tier, price: number) =>
+    call<Offer>(`/analyses/${id}/at-price?tier=${tier}&price=${encodeURIComponent(price)}`),
   offerForm: (id: string, tier: Tier, closeDays = 45) =>
     call<OfferForm>(`/analyses/${id}/offer-form?tier=${tier}&close_days=${closeDays}`),
   saveProfile: (form: OfferForm) => call<OfferForm>("/offer-profile", { method: "PUT", body: JSON.stringify(form) }),
@@ -39,7 +41,8 @@ export const api = {
     return res.blob();
   },
   approve: (id: string, body: { tier: Tier; letter_text: string; approved_by: string; agent_email?: string;
-                                 subject?: string; send: boolean; offer_form?: OfferForm | null }) =>
+                                 subject?: string; send: boolean; offer_form?: OfferForm | null;
+                                 price_override?: number | null }) =>
     call<ApprovalResult>(`/analyses/${id}/approve`, { method: "POST", body: JSON.stringify(body) }),
   resend: (approvalId: number) => call<ApprovalResult>(`/approvals/${approvalId}/send`, { method: "POST" }),
 };

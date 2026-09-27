@@ -173,6 +173,7 @@ class Offer(BaseModel):
     coc_at_low_rent: float
     return_confidence: int
     acceptance_likelihood: int | None
+    custom: bool = False                  # True when you overrode the analyzed price
 
 
 class Risk(BaseModel):
@@ -221,6 +222,7 @@ class LetterTerms(BaseModel):
 
 class LetterRequest(BaseModel):
     tier: Literal["aggressive", "target", "competitive", "stretch"]
+    price_override: float | None = Field(default=None, gt=0, le=100_000_000)
     terms: LetterTerms = Field(default_factory=LetterTerms)
     polish_with_ai: bool = False
 
@@ -236,6 +238,7 @@ class ApprovalRequest(BaseModel):
     tier: Literal["aggressive", "target", "competitive", "stretch"]
     letter_text: str = Field(min_length=20)
     offer_form: "OfferForm | None" = None   # when set, the filled Proposal to Purchase PDF is attached
+    price_override: float | None = Field(default=None, gt=0, le=100_000_000)
     approved_by: str = Field(min_length=1)
     agent_email: str | None = None
     subject: str | None = None

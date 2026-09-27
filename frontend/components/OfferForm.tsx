@@ -66,7 +66,7 @@ export default function OfferFormFields({ form, set, expectedBalance }: {
         <legend>Deal</legend>
         <div className="ofgrid">
           <Txt id="of-address" label="Property address" value={form.property_address} onChange={(v) => set("property_address", v)} wide />
-          <Money id="of-price" label="Purchase price (from the selected offer)" value={form.price} readOnly />
+          <Money id="of-price" label="Purchase price (selected offer or your override)" value={form.price} readOnly />
           <Money id="of-dep" label="Deposit at contract signing" value={form.initial_deposit} onChange={(v) => set("initial_deposit", v)} />
           <Money id="of-dep2" label="Additional deposit" value={form.additional_deposit} onChange={(v) => set("additional_deposit", v)} />
           <Txt id="of-dep2d" label="Additional deposit due on or before" value={form.additional_deposit_date} onChange={(v) => set("additional_deposit_date", v)} />

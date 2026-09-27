@@ -21,8 +21,8 @@ from .config import get_settings
 from .connectors import ConnectorRegistry
 from .db import AnalysisRow, ApprovalRow, get_session, init_db
 from .models import (Analysis, AnalysisSummary, AnalyzeRequest, ApprovalRequest, ApprovalResponse, LetterRequest,
-                     LetterResponse, OfferForm, RecomputeRequest)
-from .services import email, narrative, offer_form, offer_pdf
+                     LetterResponse, Offer, OfferForm, RecomputeRequest)
+from .services import email, narrative, offer_form, offer_pdf, offers
 from .services.pipeline import analyze, bundle_from_json, bundle_to_json
 
 logging.basicConfig(level=logging.INFO)
@@ -116,7 +116,7 @@ def recompute(analysis_id: str, req: RecomputeRequest, session: Session = Depend
 @app.post("/api/analyses/{analysis_id}/letter", response_model=LetterResponse)
 def make_letter(analysis_id: str, req: LetterRequest, session: Session = Depends(get_session)):
     a = Analysis(**_load(session, analysis_id).result)
-    offer = next(o for o in a.offers if o.tier == req.tier)
+    offer = offers.offer_for(a, req.tier, req.price_override)
     text, source = narrative.letter(settings, a, offer, req.terms, req.polish_with_ai)
     return LetterResponse(tier=offer.tier, price=offer.price, text=text, source=source)
 
@@ -175,7 +175,7 @@ def _send(session: Session, ap: ApprovalRow, a: Analysis) -> ApprovalResponse:
     ap.provider, ap.message_id, ap.thread_id, ap.send_error = sent.provider, sent.message_id, sent.thread_id, None
     row = session.get(AnalysisRow, ap.analysis_id)
     if row:
-        row.status = f"Offer sent ({ap.tier.title()})"
+        row.status = f"Offer sent ({'Custom' if (ap.snapshot or {}).get('price_override') else ap.tier.title()})"
     session.commit()
     return ApprovalResponse(**base, status="sent", sent_from=mailer.sender, sent_at=ap.sent_at.isoformat(),
                             message_id=sent.message_id,
@@ -188,7 +188,7 @@ def approve(analysis_id: str, req: ApprovalRequest, session: Session = Depends(g
     """Human approval gate: records who approved what, against which numbers, then emails it if asked."""
     row = _load(session, analysis_id)
     a = Analysis(**row.result)
-    offer = next(o for o in a.offers if o.tier == req.tier)
+    offer = offers.offer_for(a, req.tier, req.price_override)
     if req.send and not email.valid_email(req.agent_email):
         raise HTTPException(422, "Enter a valid agent email address to send the offer.")
     if req.send and (left := email.placeholders(req.letter_text)):
@@ -196,6 +196,8 @@ def approve(analysis_id: str, req: ApprovalRequest, session: Session = Depends(g
     snapshot = {"criteria": a.underwriting.criteria.model_dump(), "mao": a.underwriting.mao,
                 "constraints": [c.model_dump() for c in a.underwriting.constraints],
                 "offer": offer.model_dump(mode="json"),
+                "price_override": offer.custom,
+                "analyzed_price": next(o.price for o in a.offers if o.tier == req.tier),
                 "comps_used": [c.model_dump(mode="json") for c in a.valuation.comps if c.used],
                 "rehab": a.rehab_estimate, "rent": a.rent.model_dump(mode="json"), "trail": row.trail,
                 "offer_form": _checked_form(req.offer_form, offer.price) if req.offer_form else None}
@@ -245,13 +247,25 @@ def put_offer_profile(form: OfferForm, session: Session = Depends(get_session)):
 
 
 @app.get("/api/analyses/{analysis_id}/offer-form", response_model=OfferForm)
-def get_offer_form(analysis_id: str, tier: str = "target", close_days: int = 45,
+def get_offer_form(analysis_id: str, tier: str = "target", close_days: int = 45, price: float | None = None,
                    session: Session = Depends(get_session)):
-    """The form pre-filled for one offer tier: your saved details plus this deal's address, price and dates."""
+    """The form pre-filled for one offer tier (or your override price): saved details plus this deal's facts."""
     a = Analysis(**_load(session, analysis_id).result)
     if tier not in {o.tier for o in a.offers}:
         raise HTTPException(422, f"Unknown tier {tier}")
-    return offer_form.prefill(a, tier, offer_form.get_profile(session), close_days)
+    f = offer_form.prefill(a, tier, offer_form.get_profile(session), close_days)
+    if price:
+        f.price = float(round(price))
+        f.balance_due = offer_form.balance_due(f)
+    return f
+
+
+@app.get("/api/analyses/{analysis_id}/at-price", response_model=Offer)
+def at_price(analysis_id: str, price: float, tier: str = "target", session: Session = Depends(get_session)):
+    """What a price of your choosing does to returns and the criteria (used by the price override)."""
+    if price <= 0:
+        raise HTTPException(422, "Price must be more than zero.")
+    return offers.offer_for(Analysis(**_load(session, analysis_id).result), tier, price)
 
 
 @app.post("/api/offer-pdf")

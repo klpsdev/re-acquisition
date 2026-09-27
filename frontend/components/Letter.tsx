@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { usd } from "@/lib/format";
-import type { Analysis, ApprovalResult, EmailStatus, LetterTerms, OfferForm, Tier } from "@/lib/types";
+import { pct, usd } from "@/lib/format";
+import type { Analysis, ApprovalResult, EmailStatus, LetterTerms, Offer, OfferForm, Tier } from "@/lib/types";
 import OfferFormFields from "./OfferForm";
 
 const DEFAULT_TERMS: LetterTerms = {
@@ -40,13 +40,29 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
   const reqId = useRef(0);
   const offer = a.offers.find((o) => o.tier === tier)!;
 
+  // Offer price override: any amount you choose replaces the analyzed price in the letter, PDF, subject and approval.
+  const [overrideText, setOverrideText] = useState("");
+  const [override, setOverride] = useState<number | null>(null);
+  const [atPrice, setAtPrice] = useState<Offer | null>(null);
+  const effectivePrice = override ?? offer.price;
+  useEffect(() => { setOverrideText(""); setOverride(null); }, [a.id]);
+  useEffect(() => {
+    const n = Number(overrideText.replace(/[$,\s]/g, ""));
+    const t = setTimeout(() => setOverride(overrideText.trim() && n > 0 && isFinite(n) ? Math.round(n) : null), 400);
+    return () => clearTimeout(t);
+  }, [overrideText]);
+  useEffect(() => {
+    if (override == null) { setAtPrice(null); return; }
+    api.atPrice(a.id, tier, override).then(setAtPrice).catch(() => setAtPrice(null));
+  }, [a.id, tier, override, offer.price]);
+
   const calcBalance = (f: OfferForm) =>
     f.price == null ? null : Math.round(f.price - (f.initial_deposit ?? 0) - (f.additional_deposit ?? 0) - (f.mortgage_amount ?? 0));
 
-  // Load the pre-filled Proposal to Purchase once per analysis; afterwards a tier change only updates the price.
+  // Load the pre-filled Proposal to Purchase once per analysis; afterwards a tier or override change only updates the price.
   useEffect(() => {
     if (formFor.current === a.id && form) {
-      setForm((f) => (f ? { ...f, price: offer.price, balance_due: calcBalance({ ...f, price: offer.price }) } : f));
+      setForm((f) => (f ? { ...f, price: effectivePrice, balance_due: calcBalance({ ...f, price: effectivePrice }) } : f));
       return;
     }
     formFor.current = a.id;
@@ -56,7 +72,7 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
     if (a.property.listing_agent_name && terms.agent_name.startsWith("["))
       setTerms((t) => ({ ...t, agent_name: a.property.listing_agent_name! }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [a.id, offer.price]);
+  }, [a.id, effectivePrice]);
 
   const setField = <K extends keyof OfferForm>(k: K, v: OfferForm[K]) =>
     setForm((f) => {
@@ -105,7 +121,7 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
     const id = ++reqId.current;
     setLoading(true);
     try {
-      const r = await api.letter(a.id, tier, terms, polish);
+      const r = await api.letter(a.id, tier, terms, polish, override);
       if (id === reqId.current) { setText(r.text); setSource(r.source); setDirty(false); }
     } catch (e) {
       if (id === reqId.current) setStatus({ ok: false, msg: `Couldn't generate the letter: ${(e as Error).message}` });
@@ -115,7 +131,7 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
   }
 
   const p = a.property;
-  const defaultSubject = `Offer: ${p.street}, ${p.city}, ${p.state} ${p.zip} (${usd(offer.price)})`;
+  const defaultSubject = `Offer: ${p.street}, ${p.city}, ${p.state} ${p.zip} (${usd(effectivePrice)})`;
   useEffect(() => { if (!subjectDirty) setSubject(defaultSubject); }, [defaultSubject, subjectDirty]);
 
   // Regenerate when the offer, its price, or the terms change, unless the user has edited the text.
@@ -125,7 +141,7 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
     const t = setTimeout(() => generate(false), 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [a.id, tier, offer.price, JSON.stringify(terms)]);
+  }, [a.id, tier, effectivePrice, JSON.stringify(terms)]);
 
   const canEmail = !!email?.configured;
   const emailOk = EMAIL_RE.test(agentEmail.trim());
@@ -137,7 +153,7 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
     try {
       const r = await api.approve(a.id, {
         tier, letter_text: text, approved_by: approver.trim(), agent_email: agentEmail.trim() || undefined,
-        subject: subject.trim() || undefined, send, offer_form: attachPdf ? form : null,
+        subject: subject.trim() || undefined, send, offer_form: attachPdf ? form : null, price_override: override,
       });
       setResult(r);
       setStatus({ ok: r.status !== "send_failed", msg: r.message });
@@ -170,10 +186,29 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
   return (
     <section className="card">
       <div className="card-h"><h2>Offer letter</h2>
-        <span className="src">{offer.label} offer · {usd(offer.price)} · {loading ? "generating…" : source === "llm" ? "polished by Claude" : "draft for your review"}</span></div>
+        <span className="src">{override != null ? <b style={{ color: "var(--warn)" }}>Custom price {usd(override)}</b> : <>{offer.label} offer · {usd(offer.price)}</>} · {loading ? "generating…" : source === "llm" ? "polished by Claude" : "draft for your review"}</span></div>
       <div className="card-b">
         <div className="letter-grid">
           <div className="terms">
+            <div className="field override">
+              <label htmlFor="t-price">Offer price override</label>
+              <div className="in"><span className="u">$</span>
+                <input id="t-price" type="text" inputMode="numeric" placeholder={offer.price.toLocaleString("en-US")}
+                  value={overrideText} onChange={(e) => setOverrideText(e.target.value)} />
+                {overrideText && <button type="button" className="clear" onClick={() => setOverrideText("")} aria-label="Clear price override">×</button>}
+              </div>
+              <div className="hint">
+                {override == null ? <>Empty = the {offer.label.toLowerCase()} offer, {usd(offer.price)}.</>
+                  : atPrice ? (
+                    <span className={atPrice.meets_criteria ? "pass" : "fail"}>
+                      {atPrice.meets_criteria ? "Meets your criteria" : "Below your criteria"} · CoC {pct(atPrice.economics.coc)} ·
+                      DSCR {atPrice.economics.dscr.toFixed(2)}x · {usd(atPrice.economics.cash_flow / 12)}/mo
+                      {a.underwriting.mao > 0 && override > a.underwriting.mao && <> · {usd(override - a.underwriting.mao)} over MAO</>}
+                      {atPrice.pct_of_list != null && <> · {pct(atPrice.pct_of_list, 0)} of list</>}
+                    </span>
+                  ) : "Checking…"}
+              </div>
+            </div>
             <div className="field"><label htmlFor="t-buyer">Buyer</label><div className="in">
               <input id="t-buyer" type="text" placeholder="SP Real Estate Ventures, LLC" value={terms.buyer ?? ""}
                 onChange={(e) => set("buyer", e.target.value || null)} /></div></div>
@@ -276,7 +311,8 @@ export default function LetterCard({ a, tier, aiAvailable, email, onApproved }: 
             </div>
             {confirming && (
               <div className="confirm" role="alertdialog" aria-label="Confirm sending the offer">
-                <div>Send the <b>{offer.label.toLowerCase()} offer of {usd(offer.price)}</b> for {p.street} to <b>{agentEmail.trim()}</b> from <b>{email?.sender}</b>?
+                <div>Send the <b>{override != null ? "custom" : offer.label.toLowerCase()} offer of {usd(effectivePrice)}</b>
+                  {override != null && <> (you overrode the analyzed {usd(offer.price)}{atPrice && !atPrice.meets_criteria ? "; it's below your investment criteria" : ""})</>} for {p.street} to <b>{agentEmail.trim()}</b> from <b>{email?.sender}</b>?
                   {attachPdf && form ? <> The unsigned <b>Proposal to Purchase PDF</b> is attached.</> : null}
                   {" "}This emails the agent immediately and can&apos;t be unsent.</div>
                 <div className="confirm-actions">
