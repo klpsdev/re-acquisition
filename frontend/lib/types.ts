@@ -60,7 +60,7 @@ export interface Risk { severity: "high" | "medium" | "low"; text: string }
 export interface Analysis {
   id: string; created_at: string; property: PropertyProfile; rent: RentEstimate; neighborhood: Neighborhood;
   valuation: Valuation; rehab_estimate: number; underwriting: Underwriting; offers: Offer[]; risks: Risk[];
-  explanation: string; explanation_source: "template" | "llm";
+  explanation: string; explanation_source: "template" | "llm"; data_trail?: string[];
 }
 
 export interface AnalysisSummary { id: string; created_at: string; address: string; list_price: number | null; mao: number; status: string }

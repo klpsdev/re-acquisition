@@ -189,6 +189,7 @@ class Analysis(BaseModel):
     risks: list[Risk]
     explanation: str
     explanation_source: Literal["template", "llm"]
+    data_trail: list[str] = Field(default_factory=list)   # which provider answered what; failures with reasons
 
 
 class AnalyzeRequest(BaseModel):

@@ -69,6 +69,25 @@ export default function Rail({ a, tier, recent, providers, onOpen }: {
         </div></section>
       )}
 
+      {a.data_trail && a.data_trail.length > 0 && (
+        <section className="card"><div className="card-b">
+          <div className="eyebrow" style={{ marginBottom: 8 }}>Where this analysis&apos;s data came from</div>
+          <ul className="trail">
+            {a.data_trail.map((t, i) => {
+              const [what, ...rest] = t.split(": ");
+              const detail = rest.join(": ");
+              const bad = /failed|no match/.test(detail);
+              const fallback = detail === "sample" && providers?.data_mode === "live";
+              return (
+                <li key={i} className={bad ? "bad" : fallback ? "warn" : ""}>
+                  <b>{what}</b><span>{detail}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div></section>
+      )}
+
       {providers && (
         <section className="card"><div className="card-b">
           <div className="eyebrow" style={{ marginBottom: 8 }}>Data sources · {providers.data_mode} mode</div>

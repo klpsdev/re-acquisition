@@ -41,6 +41,7 @@ def analyze(settings: Settings, b: DataBundle, criteria: Criteria | None = None,
         created_at=created_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         property=prop, rent=rent, neighborhood=nb, valuation=val, rehab_estimate=rehab, underwriting=uw,
         offers=offers, risks=risks(prop, rent, val, uw, rehab), explanation="", explanation_source="template",
+        data_trail=list(b.trail),
     )
     if explain_with_ai:
         a.explanation, a.explanation_source = narrative.explain(settings, a)

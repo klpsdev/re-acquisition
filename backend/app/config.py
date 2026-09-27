@@ -1,6 +1,7 @@
 """Runtime settings, read from environment variables or backend/.env."""
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +53,13 @@ class Settings(BaseSettings):
 
     # --- Buyer defaults ----------------------------------------------------
     buyer_entity: str = "SP Real Estate Ventures, LLC"
+
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _strip(cls, v):
+        # Pasted keys often carry a trailing space or newline.
+        return v.strip() if isinstance(v, str) else v
 
 
 @lru_cache

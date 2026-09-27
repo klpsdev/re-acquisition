@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import random
+import re
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -116,6 +117,11 @@ def _synthesize(address: str) -> _Sample:
     s.key = "synthetic"
     s.street = parts[0] if parts else address
     s.city = parts[1] if len(parts) > 1 else base.city
+    tail = " ".join(parts[2:]) if len(parts) > 2 else ""
+    zm = re.search(r"\b(\d{5})\b", tail) or re.search(r"\b(\d{5})\b", address)
+    if zm and zm.group(1) != base.zip:
+        s.zip = zm.group(1)
+        s.county = ""          # unknown; the Census connector fills the real county in live mode
     k = 0.9 + rnd.random() * 0.2
     s.sqft = round(base.sqft * k / 10) * 10
     s.list_price = round(base.list_price * (0.94 + rnd.random() * 0.12) / 100) * 100

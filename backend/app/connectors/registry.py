@@ -64,11 +64,14 @@ class ConnectorRegistry:
                 out = fn()
             except Exception as e:  # noqa: BLE001 - a provider failure should never sink the analysis
                 log.warning("%s via %s failed: %s", label, conn.name, e)
-                trail.append(f"{label}: {conn.name} failed ({type(e).__name__})")
+                msg = " ".join(str(e).split())[:220]
+                trail.append(f"{label}: {conn.name} failed: {msg or type(e).__name__}")
                 continue
             if out:
                 trail.append(f"{label}: {conn.name}")
                 return out
+            if conn is not self.sample:
+                trail.append(f"{label}: {conn.name} found no match for this address")
         raise RuntimeError(f"No provider could answer {label}")
 
     def gather(self, address: str) -> DataBundle:
@@ -90,7 +93,7 @@ class ConnectorRegistry:
                     prop.status = lst.get("StandardStatus") or prop.status
                     trail.append("listing: reso_mls")
             except Exception as e:  # noqa: BLE001
-                trail.append(f"listing: reso_mls failed ({type(e).__name__})")
+                trail.append(f"listing: reso_mls failed: {' '.join(str(e).split())[:220]}")
 
         if not prop.annual_insurance:
             prop.annual_insurance = round(max(1200, prop.sqft * 0.9 + prop.units * 300), -1)
@@ -110,5 +113,6 @@ class ConnectorRegistry:
             (self.sample, lambda: self.sample.comps(prop)),
         ])
         bundle = DataBundle(prop, rent, nb, comps, trail)
-        self._cache[key] = bundle
+        if not any("failed" in t for t in trail):   # retry failed providers on the next run
+            self._cache[key] = bundle
         return bundle

@@ -188,3 +188,22 @@ def test_reso_oauth_client_credentials_fetches_caches_and_refreshes_token():
     conn.comps(prop)            # 401 → refresh → retry
     conn.comps(prop)            # reuses refreshed token
     assert calls["token"] == 2
+
+
+def test_failed_provider_is_reported_with_reason_and_synthetic_uses_typed_zip():
+    from app.connectors.registry import ConnectorRegistry as Reg
+
+    def handler(req: httpx.Request):
+        return httpx.Response(401, json={"message": "Your subscription is inactive"})
+
+    s = Settings(data_mode="live", rentcast_api_key=" k \n")
+    assert s.rentcast_api_key == "k"
+    reg = Reg(s)
+    reg.rentcast.http = _client(handler)
+    b = reg.gather("214 Harvard Ave, Stratford, NJ 08084")
+    fails = [t for t in b.trail if "rentcast failed" in t]
+    assert fails and "subscription is inactive" in fails[0]
+    assert b.property.zip == "08084" and b.property.source.synthetic
+    assert "214 harvard ave, stratford, nj 08084" not in reg._cache   # retried next time
+    a = analyze(s, b, explain_with_ai=False)
+    assert a.data_trail == b.trail
