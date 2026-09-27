@@ -211,6 +211,8 @@ class LetterTerms(BaseModel):
     close_days: int = 45
     financing: str = "Conventional investor loan, 25% down"
     signer_name: str = "[Your name]"
+    signer_phone: str = "[Phone]"
+    signer_email: str | None = None      # defaults to the Gmail sender when email is set up
 
 
 class LetterRequest(BaseModel):
@@ -228,15 +230,21 @@ class LetterResponse(BaseModel):
 
 class ApprovalRequest(BaseModel):
     tier: Literal["aggressive", "target", "competitive", "stretch"]
-    letter_text: str
+    letter_text: str = Field(min_length=20)
     approved_by: str = Field(min_length=1)
     agent_email: str | None = None
+    subject: str | None = None
+    send: bool = False            # True = email the letter to agent_email right after logging the approval
 
 
 class ApprovalResponse(BaseModel):
     approval_id: int
-    status: Literal["approved_not_sent", "sent"]
+    status: Literal["approved_not_sent", "sent", "send_failed"]
     message: str
+    sent_from: str | None = None
+    sent_to: str | None = None
+    sent_at: str | None = None
+    message_id: str | None = None
 
 
 class AnalysisSummary(BaseModel):

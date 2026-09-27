@@ -70,6 +70,47 @@ Bright follows the RESO Data Dictionary 1.7, so the fields the connector reads (
 - **RentCast comps** are recent listings with list prices, not confirmed closed sales. Treat them as a fallback until an MLS feed is connected.
 - **Condition** isn't in any feed. It defaults to "Good" for live records. The RESO connector infers it from listing remarks ("TLC", "fully renovated"). Override the rehab number in the UI after a walkthrough.
 
+## Sending offers from Gmail
+
+Approved offers are emailed **from your own Gmail account** through the Gmail API. They land in your Sent folder, and agents' replies come back to your inbox. The app uses the Gmail API over HTTPS because Render's free plan blocks outgoing email (SMTP) ports.
+
+The app only ever asks for the `gmail.send` permission. It can send as you, but it can't read your mail.
+
+**One-time setup (about 15 minutes):**
+
+1. **Create a Google Cloud project.** Go to [console.cloud.google.com](https://console.cloud.google.com), create a project (for example "SPREV Offers"), then open **APIs & Services → Library**, search for **Gmail API**, and click **Enable**.
+2. **Set up the consent screen.** Go to **APIs & Services → OAuth consent screen** (called "Google Auth Platform" in newer consoles):
+   - User type: **External**. App name: anything. Support email: your Gmail.
+   - Under **Audience**, add your Gmail as a test user.
+   - Then click **Publish app** so it moves to "In production". This matters: while the app is in *Testing*, Google expires the authorization after **7 days** and sending stops. You don't need Google's verification for your own account; you'll just click past an "unverified app" warning once.
+3. **Create a client.** Go to **Credentials → Create credentials → OAuth client ID**, choose application type **Desktop app**, and copy the **Client ID** and **Client secret**.
+4. **Authorize on your own computer.** This opens a browser:
+   ```bash
+   python3 backend/scripts/gmail_auth.py --client-id YOUR_ID.apps.googleusercontent.com --client-secret YOUR_SECRET
+   ```
+   Sign in with the Gmail account you want to send from, then allow "Send email on your behalf". The script sends you a test email and prints four values.
+5. **Add the values to Render.** In **sprev-api → Environment**, add the four printed values: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` and `GMAIL_SENDER`. Optionally add:
+   - `EMAIL_SENDER_NAME`, for example "Lalith, SP Real Estate Ventures"
+   - `EMAIL_CC`, a comma-separated list of addresses to copy on every offer, such as a partner
+
+   Then click **Save, rebuild, and deploy**.
+
+When it's working, the Data sources card shows **Email sending · you@gmail.com** with a green dot.
+
+**How sending works in the app:**
+
+1. Fill in the letter terms: agent name, your name and your phone. **Send is blocked while any `[placeholder]` remains**, both in the page and on the server.
+2. Enter the agent's email and your name, and tick **I reviewed the numbers and approve this offer**.
+3. Click **Approve & send…**. A confirmation shows the price, the property, the recipient and your sending address. Click **Send offer now**.
+4. The approval is saved with a snapshot of the numbers, then emailed.
+   - The Gmail message ID and send time are stored, and the address's status becomes "Offer sent".
+   - An approval is never emailed twice.
+   - If a send fails, the reason is shown along with a **Retry send** button.
+
+**Stopping or revoking access:** remove the Gmail variables from Render, or revoke the app at [myaccount.google.com/permissions](https://myaccount.google.com/permissions). Treat the refresh token like a password.
+
+**Not on Render's free plan?** SMTP works too. Set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USERNAME` to your Gmail address, and `SMTP_PASSWORD` to a [Google app password](https://myaccount.google.com/apppasswords) (this needs 2-Step Verification). The Gmail API is used whenever both are configured.
+
 ## Where to change the rules
 
 | What | File |
@@ -117,14 +158,16 @@ Free-plan limits:
 | POST | `/api/analyze` | `{address, criteria?, rehab_override?}` → full analysis (stored) |
 | POST | `/api/analyses/{id}/recompute` | New criteria or rehab against the stored data, with no provider calls |
 | POST | `/api/analyses/{id}/letter` | `{tier, terms, polish_with_ai}` → letter text |
-| POST | `/api/analyses/{id}/approve` | Logs who approved which offer, with a snapshot of criteria, comps and MAO |
+| POST | `/api/analyses/{id}/approve` | Logs who approved which offer (snapshot of criteria, comps, MAO); with `send: true`, emails it to `agent_email` |
+| POST | `/api/approvals/{id}/send` | Retries sending an approved offer (never sends twice) |
+| GET | `/api/analyses/{id}/approvals` | Approval and send history for an analysis |
 | GET | `/api/analyses` | Recent analyses |
 | GET | `/api/analyses/{id}` / `/trail` | One analysis / its data provenance |
 | GET | `/api/providers` | Which connectors are active |
 
 ## Next steps
 
-1. **Email delivery:** send the letter from `approve()` in `backend/app/main.py` via SMTP, SendGrid or the Gmail API, then set `sent=True`. Approval is already required first.
+1. **Follow-ups:** track agent replies (Gmail thread IDs are already stored with each sent offer) and flag offers with no response after 48 hours.
 2. **Per-user login:** the site currently has one shared password. Add individual accounts (for example Clerk or Auth.js) so the approvals log records who approved each offer.
 3. **Pipeline tracking:** track statuses beyond "Approved" (Offer sent → Countered → Under contract → Passed), which also produces the training data for the acceptance model.
 4. **Rehab line items:** replace the $/sf rule with a walkthrough checklist (roof, HVAC, kitchen, baths, flooring, paint).

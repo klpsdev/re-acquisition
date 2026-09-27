@@ -51,6 +51,22 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-5"
 
+    # --- Email (offer letters) ----------------------------------------------
+    # Gmail API: sends as you over HTTPS (works on Render free). Run
+    # `python backend/scripts/gmail_auth.py` once to get the refresh token.
+    gmail_client_id: str | None = None
+    gmail_client_secret: str | None = None
+    gmail_refresh_token: str | None = None
+    gmail_sender: str | None = None          # your Gmail address, e.g. you@gmail.com
+    email_sender_name: str | None = None     # display name, e.g. "Lalith · SP Real Estate Ventures"
+    email_cc: str | None = None              # optional comma-separated CC on every offer (e.g. a partner)
+    # SMTP alternative (hosts that allow outbound SMTP only)
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+
     # --- Buyer defaults ----------------------------------------------------
     buyer_entity: str = "SP Real Estate Ventures, LLC"
 

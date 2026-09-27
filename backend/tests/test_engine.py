@@ -207,3 +207,129 @@ def test_failed_provider_is_reported_with_reason_and_synthetic_uses_typed_zip():
     assert "214 harvard ave, stratford, nj 08084" not in reg._cache   # retried next time
     a = analyze(s, b, explain_with_ai=False)
     assert a.data_trail == b.trail
+
+
+# ---- email --------------------------------------------------------------------
+
+def _gmail_settings(**kw):
+    return Settings(gmail_client_id="cid", gmail_client_secret="sec", gmail_refresh_token="rt",
+                    gmail_sender="me@gmail.com", **kw)
+
+
+def test_gmail_mailer_refreshes_token_and_sends_raw_mime():
+    import base64
+    from email import message_from_bytes
+
+    from app.services.email import GmailApiMailer, build_message
+
+    seen = {}
+
+    def handler(req: httpx.Request):
+        if req.url.host == "oauth2.googleapis.com":
+            assert b"grant_type=refresh_token" in req.content and b"refresh_token=rt" in req.content
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3599})
+        assert req.headers["Authorization"] == "Bearer at"
+        seen["raw"] = json.loads(req.content)["raw"]
+        return httpx.Response(200, json={"id": "18f0abc", "threadId": "18f0abc"})
+
+    m = GmailApiMailer(_gmail_settings(), client=_client(handler))
+    msg = build_message("me@gmail.com", "Lalith", "agent@brokerage.com", "Offer: 1 Main St ($200,000)",
+                        "Dear Agent,\n\nOffer attached.", cc=["partner@example.com"])
+    sent = m.send(msg)
+    assert sent.message_id == "18f0abc"
+    parsed = message_from_bytes(base64.urlsafe_b64decode(seen["raw"]))
+    assert parsed["To"] == "agent@brokerage.com" and parsed["Cc"] == "partner@example.com"
+    assert parsed["From"] == "Lalith <me@gmail.com>" and "Offer attached." in parsed.get_payload()
+
+
+def test_gmail_invalid_grant_explains_the_fix():
+    from app.services.email import EmailError, GmailApiMailer, build_message
+
+    m = GmailApiMailer(_gmail_settings(), client=_client(
+        lambda req: httpx.Response(400, json={"error": "invalid_grant"})))
+    with pytest.raises(EmailError, match="gmail_auth.py"):
+        m.send(build_message("me@gmail.com", None, "a@b.com", "s", "body text"))
+
+
+def test_approve_and_send_records_message_and_never_sends_twice(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import main
+    from app.services import email as email_mod
+    from app.services.email import SentMessage
+
+    sends = []
+
+    class FakeMailer:
+        provider, sender = "gmail_api", "me@gmail.com"
+
+        def send(self, msg):
+            sends.append(msg)
+            return SentMessage("gmail_api", "msg-1", "thr-1")
+
+    monkeypatch.setattr(email_mod, "_mailer", FakeMailer())
+    with TestClient(main.app) as client:
+        a = client.post("/api/analyze", json={"address": WOODBURY}).json()
+        letter = client.post(f"/api/analyses/{a['id']}/letter", json={"tier": "target", "terms": {"agent_name": "Dana Reyes", "signer_name": "Lalith",
+                                                   "signer_phone": "856-555-0100", "signer_email": "me@gmail.com"}}).json()["text"]
+        bad = client.post(f"/api/analyses/{a['id']}/approve", json={
+            "tier": "target", "letter_text": letter, "approved_by": "Lalith", "agent_email": "nope", "send": True})
+        assert bad.status_code == 422
+        r = client.post(f"/api/analyses/{a['id']}/approve", json={
+            "tier": "target", "letter_text": letter, "approved_by": "Lalith",
+            "agent_email": "agent@brokerage.com", "send": True}).json()
+        assert r["status"] == "sent" and r["sent_from"] == "me@gmail.com" and r["message_id"] == "msg-1"
+        assert sends[0]["Subject"].startswith("Offer: 218 Carpenter St")
+        again = client.post(f"/api/approvals/{r['approval_id']}/send").json()
+        assert again["status"] == "sent" and len(sends) == 1
+        hist = client.get(f"/api/analyses/{a['id']}/approvals").json()
+        assert hist[0]["sent"] and hist[0]["agent_email"] == "agent@brokerage.com"
+        assert client.get("/api/analyses").json()[0]["status"].startswith("Offer sent")
+
+
+def test_migration_adds_email_columns_to_existing_approvals_table(tmp_path):
+    from sqlalchemy import create_engine, inspect, text
+
+    from app import db
+
+    eng = create_engine(f"sqlite:///{tmp_path}/old.db")
+    with eng.begin() as c:
+        c.execute(text("CREATE TABLE analyses (id VARCHAR(32) PRIMARY KEY, created_at TIMESTAMP, address VARCHAR(300), "
+                       "list_price FLOAT, mao FLOAT, status VARCHAR(40), inputs JSON, result JSON, trail JSON)"))
+        c.execute(text("CREATE TABLE approvals (id INTEGER PRIMARY KEY, analysis_id VARCHAR(32), created_at TIMESTAMP, "
+                       "tier VARCHAR(20), price FLOAT, approved_by VARCHAR(120), agent_email VARCHAR(200), "
+                       "letter_text TEXT, snapshot JSON, sent BOOLEAN)"))
+    old = db.engine
+    db.engine = eng
+    try:
+        db.init_db()
+    finally:
+        db.engine = old
+    cols = {c["name"] for c in inspect(eng).get_columns("approvals")}
+    assert {"sent_at", "message_id", "send_error", "subject"} <= cols
+
+
+def test_send_is_blocked_while_letter_has_placeholders(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import main
+    from app.services import email as email_mod
+    class FakeMailer:
+        provider, sender = "gmail_api", "me@gmail.com"
+
+        def send(self, msg):
+            raise AssertionError("must not send")
+
+    monkeypatch.setattr(email_mod, "_mailer", FakeMailer())
+    with TestClient(main.app) as client:
+        a = client.post("/api/analyze", json={"address": WOODBURY}).json()
+        letter = client.post(f"/api/analyses/{a['id']}/letter", json={"tier": "target"}).json()["text"]
+        assert "[Your name]" in letter
+        r = client.post(f"/api/analyses/{a['id']}/approve", json={
+            "tier": "target", "letter_text": letter, "approved_by": "Lalith",
+            "agent_email": "agent@brokerage.com", "send": True})
+        assert r.status_code == 422 and "[Your name]" in r.json()["detail"]
+        filled = client.post(f"/api/analyses/{a['id']}/letter", json={"tier": "target", "terms": {"agent_name": "Dana Reyes", "signer_name": "Lalith",
+                                                   "signer_phone": "856-555-0100", "signer_email": "me@gmail.com"}}).json()["text"]
+        assert email_mod.placeholders(filled) == []
+        assert "Dear Dana," in filled and "856-555-0100 · me@gmail.com" in filled

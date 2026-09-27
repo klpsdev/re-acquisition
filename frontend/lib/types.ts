@@ -67,8 +67,13 @@ export interface AnalysisSummary { id: string; created_at: string; address: stri
 
 export interface LetterTerms {
   buyer?: string | null; agent_name: string; earnest_money_pct: number; inspection_days: number;
-  close_days: number; financing: string; signer_name: string;
+  close_days: number; financing: string; signer_name: string; signer_phone: string; signer_email?: string | null;
 }
 
 export interface Provider { id: string; name: string; active: boolean; provides: string }
-export interface ProvidersResponse { data_mode: string; providers: Provider[]; ai_explanations: boolean }
+export interface EmailStatus { configured: boolean; provider: string | null; sender: string | null }
+export interface ProvidersResponse { data_mode: string; providers: Provider[]; ai_explanations: boolean; email?: EmailStatus }
+export interface ApprovalResult {
+  approval_id: number; status: "approved_not_sent" | "sent" | "send_failed"; message: string;
+  sent_from: string | null; sent_to: string | null; sent_at: string | null; message_id: string | null;
+}

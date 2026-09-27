@@ -139,7 +139,7 @@ export default function Dashboard() {
             <CompsCard a={analysis} />
             <UnderwritingCard a={analysis} criteria={criteria} onCriteria={setCriteria} rehab={rehab} onRehab={setRehab} busy={recomputing} />
             <OffersCard a={analysis} selected={tier} onSelect={setTier} />
-            <LetterCard a={analysis} tier={tier} aiAvailable={!!providers?.ai_explanations} onApproved={loadRecent} />
+            <LetterCard a={analysis} tier={tier} aiAvailable={!!providers?.ai_explanations} email={providers?.email} onApproved={loadRecent} />
           </main>
           <Rail a={analysis} tier={tier} recent={recent} providers={providers} onOpen={open} />
         </div>
@@ -148,7 +148,7 @@ export default function Dashboard() {
       <p className="foot">
         Figures come from the providers listed under Data sources; in sample mode they are illustrative, and unknown addresses get a
         synthetic profile. Underwriting, MAO and offer tiers are computed by the Python API. Approvals are logged with a snapshot of
-        the numbers; nothing is emailed until you connect a mail provider. Not legal or financial advice; have an attorney review offers.
+        the numbers; an offer is emailed only after you approve it and confirm the send. Not legal or financial advice; have an attorney review offers.
       </p>
     </div>
   );

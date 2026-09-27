@@ -96,6 +96,8 @@ export default function Rail({ a, tier, recent, providers, onOpen }: {
               <div key={pr.id} title={pr.provides}><i className={pr.active ? "on" : ""} />{pr.name}</div>
             ))}
             <div><i className={providers.ai_explanations ? "on" : ""} />Claude explanations</div>
+            <div title={providers.email?.sender ?? ""}><i className={providers.email?.configured ? "on" : ""} />
+              Email sending{providers.email?.configured ? ` · ${providers.email.sender}` : ""}</div>
           </div>
         </div></section>
       )}

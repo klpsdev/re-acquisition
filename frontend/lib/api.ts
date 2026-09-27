@@ -1,4 +1,4 @@
-import type { Analysis, AnalysisSummary, Criteria, LetterTerms, ProvidersResponse, Tier } from "./types";
+import type { Analysis, AnalysisSummary, ApprovalResult, Criteria, LetterTerms, ProvidersResponse, Tier } from "./types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -29,8 +29,8 @@ export const api = {
     call<{ tier: Tier; price: number; text: string; source: "template" | "llm" }>(`/analyses/${id}/letter`, {
       method: "POST", body: JSON.stringify({ tier, terms, polish_with_ai }),
     }),
-  approve: (id: string, tier: Tier, letter_text: string, approved_by: string, agent_email?: string) =>
-    call<{ approval_id: number; status: string; message: string }>(`/analyses/${id}/approve`, {
-      method: "POST", body: JSON.stringify({ tier, letter_text, approved_by, agent_email: agent_email || null }),
-    }),
+  approve: (id: string, body: { tier: Tier; letter_text: string; approved_by: string; agent_email?: string;
+                                 subject?: string; send: boolean }) =>
+    call<ApprovalResult>(`/analyses/${id}/approve`, { method: "POST", body: JSON.stringify(body) }),
+  resend: (approvalId: number) => call<ApprovalResult>(`/approvals/${approvalId}/send`, { method: "POST" }),
 };

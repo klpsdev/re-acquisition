@@ -102,7 +102,7 @@ Sincerely,
 
 {terms.signer_name}
 Authorized agent, {buyer}
-[Phone] · [Email]"""
+{terms.signer_phone} · {terms.signer_email or settings.gmail_sender or settings.smtp_from or "[Email]"}"""
     if polish:
         llm = ai.write(settings, "Lightly polish the cover-letter wording of this offer letter. Keep every number, "
                        "date, term line and condition exactly as written. Return only the letter.", body, 1200)
